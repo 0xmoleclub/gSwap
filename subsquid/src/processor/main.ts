@@ -7,7 +7,8 @@ import * as gPool from '../abi/gPool.js';
 import { Factory, Pool, Token, Swap, Mint, Burn, Sync } from '../model/index.js';
 
 const FACTORY_ADDRESS = process.env.FACTORY_ADDRESS || '0x0000000000000000000000000000000000000000';
-const START_BLOCK = parseInt(process.env.START_BLOCK || '0');
+// Use DEPLOY_BLOCK to start indexing from contract deployment (skip earlier blocks)
+const START_BLOCK = parseInt(process.env.DEPLOY_BLOCK || process.env.START_BLOCK || '0');
 
 const processor = new EvmBatchProcessor()
   .setDataSource({
