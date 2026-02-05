@@ -164,13 +164,53 @@ export const FACTORY = {
   totalFeesUSD: 3000n,
 };
 
+// Deploy block - indexer starts from here instead of block 0
+export const DEPLOY_BLOCK = 1000n;
+export const DEPLOY_TIMESTAMP = new Date('2026-02-05T10:00:00Z');
+
+// MockERC20 Token Factory for testing
+export interface MockTokenTemplate {
+  name: string;
+  symbol: string;
+  decimals: number;
+  initialSupply: bigint;
+}
+
+// Generate many mock tokens for testing
+export const generateMockTokens = (count: number): Token[] => {
+  const tokens: Token[] = [...Object.values(TOKENS)];
+  
+  for (let i = 1; i <= count; i++) {
+    const addr = `0xmock${i.toString().padStart(40, '0')}`.slice(0, 42);
+    tokens.push({
+      address: addr,
+      symbol: `MOCK${i}`,
+      decimals: 18,
+      name: `Mock Token ${i}`,
+    });
+  }
+  
+  return tokens;
+};
+
+// Pre-generated mock tokens for convenience
+export const MOCK_TOKENS: Token[] = [
+  ...Object.values(TOKENS),
+  // Additional test tokens
+  { address: '0x1111111111111111111111111111111111111111', symbol: 'ALPHA', decimals: 18, name: 'Alpha Token' },
+  { address: '0x2222222222222222222222222222222222222222', symbol: 'BETA', decimals: 18, name: 'Beta Token' },
+  { address: '0x3333333333333333333333333333333333333333', symbol: 'GAMMA', decimals: 6, name: 'Gamma Stable' },
+  { address: '0x4444444444444444444444444444444444444444', symbol: 'DELTA', decimals: 18, name: 'Delta Governance' },
+  { address: '0x5555555555555555555555555555555555555555', symbol: 'EPSILON', decimals: 8, name: 'Epsilon BTC' },
+];
+
 // Helper functions
 export function getPoolByAddress(address: string): Pool | undefined {
   return POOLS.find(p => p.address.toLowerCase() === address.toLowerCase());
 }
 
 export function getTokenByAddress(address: string): Token | undefined {
-  return Object.values(TOKENS).find(t => t.address.toLowerCase() === address.toLowerCase());
+  return MOCK_TOKENS.find(t => t.address.toLowerCase() === address.toLowerCase());
 }
 
 export function getPoolsByToken(tokenAddress: string): Pool[] {
@@ -182,9 +222,48 @@ export function getPoolsByToken(tokenAddress: string): Pool[] {
 }
 
 export function getAllTokens(): Token[] {
-  return Object.values(TOKENS);
+  return MOCK_TOKENS;
 }
 
 export function getAllPools(): Pool[] {
   return POOLS;
+}
+
+// Generate random pools for testing
+export function generateRandomPools(tokenCount: number, poolCount: number): Pool[] {
+  const tokens = generateMockTokens(tokenCount);
+  const pools: Pool[] = [];
+  
+  for (let i = 0; i < poolCount && pools.length < poolCount; i++) {
+    const token0 = tokens[Math.floor(Math.random() * tokens.length)];
+    const token1 = tokens[Math.floor(Math.random() * tokens.length)];
+    
+    if (token0.address === token1.address) continue;
+    
+    // Sort tokens for consistent ordering
+    const [t0, t1] = token0.address < token1.address ? [token0, token1] : [token1, token0];
+    
+    // Check if pool already exists
+    const exists = pools.some(p => 
+      (p.token0.address === t0.address && p.token1.address === t1.address)
+    );
+    if (exists) continue;
+    
+    const reserve0 = BigInt(Math.floor(Math.random() * 1000) + 100) * BigInt(10 ** t0.decimals);
+    const reserve1 = BigInt(Math.floor(Math.random() * 1000) + 100) * BigInt(10 ** t1.decimals);
+    
+    pools.push({
+      address: `0xpool${pools.length + 100}`,
+      token0: t0,
+      token1: t1,
+      reserve0,
+      reserve1,
+      swapFee: 30,
+      totalSupply: reserve0 / 10n,
+      blockNumber: 1000n + BigInt(pools.length),
+      timestamp: new Date(Date.now() - Math.floor(Math.random() * 86400000)),
+    });
+  }
+  
+  return pools;
 }
