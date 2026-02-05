@@ -181,13 +181,3 @@ contract DeployGSwap is Script {
         console.log("3. Start the agent");
     }
 }
-
-/**
- * @title DeployGSwapAnvil
- * @notice Simplified version for local Anvil testing
- * @dev Run with: forge script script/DeployGSwap.s.sol --rpc-url http://localhost:8545 --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 --broadcast
- */
-contract DeployGSwapAnvil is DeployGSwap {
-    // Uses same logic but with Anvil defaults
-    // Anvil default private key: 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
-}
