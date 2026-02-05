@@ -172,18 +172,13 @@ PAYLOAD_EOF`);
           -H "X-Title: gSwap Arbitrage Agent" \
           -d @${tmpFile}`;
 
-        console.log(`   DEBUG: Calling OpenRouter... (attempt ${attempt})`);
         const result = execSync(cmd, { encoding: 'utf-8', timeout: 30000 });
         
         // Clean up temp file
         try { execSync(`rm ${tmpFile}`); } catch {}
 
-        // Parse response and HTTP code
-        const [body, httpCodeLine] = result.split('\nHTTP_CODE:');
-        const httpCode = parseInt(httpCodeLine || '0');
-        
-        console.log(`   DEBUG: HTTP ${httpCode}`);
-        console.log(`   DEBUG: Response preview: ${body.slice(0, 200)}...`);
+        // Parse response (split off HTTP code line)
+        const body = result.split('\nHTTP_CODE:')[0];
 
         let data;
         try {
@@ -193,7 +188,6 @@ PAYLOAD_EOF`);
         }
 
         if (data.error) {
-          console.log(`   DEBUG: API error:`, data.error);
           if (data.error.code === 429 || data.error.message?.includes('rate-limited')) {
             const delay = attempt * 2000;
             console.log(`   Rate limited (429), waiting ${delay}ms before retry ${attempt}/${retries}...`);
