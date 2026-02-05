@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.19;
+pragma solidity ^0.8.20;
 
-import "./interfaces/IgPool.sol";
+import {IgPool} from "./interfaces/IgPool.sol";
 
 /**
  * @title gPool
@@ -11,7 +11,7 @@ import "./interfaces/IgPool.sol";
 contract gPool is IgPool {
     
     /// @notice Factory that created this pool
-    address public immutable factory;
+    address public immutable FACTORY;
     
     /// @notice Token addresses (sorted)
     address public override token0;
@@ -57,12 +57,12 @@ contract gPool is IgPool {
     }
     
     modifier onlyFactory() {
-        require(msg.sender == factory, "gPool: NOT_FACTORY");
+        require(msg.sender == FACTORY, "gPool: NOT_FACTORY");
         _;
     }
     
     constructor() {
-        factory = msg.sender;
+        FACTORY = msg.sender;
     }
     
     /// @notice Initialize pool - called by factory once

@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.19;
+pragma solidity ^0.8.20;
 
-import "./gPool.sol";
-import "./interfaces/IgPool.sol";
-import "./interfaces/IgSwapFactory.sol";
+import {gPool} from "./gPool.sol";
+import {IgPool} from "./interfaces/IgPool.sol";
+import {IgSwapFactory} from "./interfaces/IgSwapFactory.sol";
 
 /**
  * @title gSwapFactory

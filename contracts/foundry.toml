@@ -1,0 +1,28 @@
+[profile.default]
+src = "src"
+out = "out"
+libs = ["lib"]
+script = "script"
+test = "test"
+cache_path = "cache"
+
+# Solidity version
+solc_version = "0.8.20"
+
+# Optimizer
+optimizer = true
+optimizer_runs = 200
+
+# Gas reporting
+gas_reports = ["gSwapFactory", "gPool", "MockERC20"]
+
+[rpc_endpoints]
+anvil = "http://localhost:8545"
+
+# You can add other networks here
+# mainnet = "${MAINNET_RPC_URL}"
+# sepolia = "${SEPOLIA_RPC_URL}"
+
+[etherscan]
+# Add API keys for verification
+# mainnet = "${ETHERSCAN_API_KEY}"
