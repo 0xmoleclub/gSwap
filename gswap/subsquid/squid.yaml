@@ -1,0 +1,40 @@
+manifestVersion: subsquid.io/v0.1
+name: gswap-indexer
+version: 1.0.0
+description: gSwap DEX indexer for arbitrage detection
+
+build:
+
+deploy:
+  addons:
+    postgres:
+      config:
+        statement_timeout: 60000
+  processor:
+    cmd:
+      - node
+      - -r
+      - dotenv/config
+      - lib/processor/main.js
+  api:
+    cmd:
+      - npx
+      - squid-graphql-server
+      - --subscriptions
+      - --dumb-cache
+      - in-memory
+      - --dumb-cache-ttl-ms
+      - "30000"
+      - --dumb-cache-max-age-ms
+      - "1000"
+
+scale:
+  addons:
+    postgres:
+      storage: 10Gi
+      profile: small
+  processor:
+    profile: small
+  api:
+    profile: small
+    replicas: 1
