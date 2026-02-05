@@ -3,6 +3,7 @@
  * Analyzes arbitrage opportunities and decides execution strategy
  */
 
+import { execSync } from 'child_process';
 import { ArbitrageOpportunity } from '../arbitrage/calculator.js';
 import { Pool } from '../graphql/client.js';
 
@@ -130,54 +131,84 @@ export class LLMAnalyzer {
   }
 
   /**
-   * Call OpenRouter API with retry logic
+   * Call OpenRouter API using curl
    */
   private async callLLM(prompt: string, retries = 3): Promise<string> {
     if (!this.config.apiKey) {
       throw new Error('OPENROUTER_API_KEY not configured');
     }
 
+    const payload = {
+      model: this.config.model,
+      messages: [
+        {
+          role: 'system',
+          content: 'You are an expert DeFi arbitrage analyst. Analyze opportunities and provide structured decisions. Be concise but thorough.',
+        },
+        {
+          role: 'user',
+          content: prompt,
+        },
+      ],
+      max_tokens: this.config.maxTokens,
+      temperature: this.config.temperature,
+    };
+
+    const payloadStr = JSON.stringify(payload);
+    // Write payload to temp file to avoid shell escaping issues
+    const tmpFile = `/tmp/gswap_payload_${Date.now()}.json`;
+    
     for (let attempt = 1; attempt <= retries; attempt++) {
       try {
-        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${this.config.apiKey}`,
-            'Content-Type': 'application/json',
-            'HTTP-Referer': 'https://gswap.io',
-            'X-Title': 'gSwap Arbitrage Agent',
-          },
-          body: JSON.stringify({
-            model: this.config.model,
-            messages: [
-              {
-                role: 'system',
-                content: 'You are an expert DeFi arbitrage analyst. Analyze opportunities and provide structured decisions. Be concise but thorough.',
-              },
-              {
-                role: 'user',
-                content: prompt,
-              },
-            ],
-            max_tokens: this.config.maxTokens,
-            temperature: this.config.temperature,
-          }),
-        });
+        // Write payload to temp file
+        execSync(`cat > ${tmpFile} << 'PAYLOAD_EOF'
+${payloadStr}
+PAYLOAD_EOF`);
 
-        if (response.status === 429) {
-          const delay = attempt * 2000;
-          console.log(`   Rate limited (429), waiting ${delay}ms before retry ${attempt}/${retries}...`);
-          await this.sleep(delay);
-          continue;
+        const cmd = `curl -s -w "\\nHTTP_CODE:%{http_code}" -X POST https://openrouter.ai/api/v1/chat/completions \
+          -H "Authorization: Bearer ${this.config.apiKey}" \
+          -H "Content-Type: application/json" \
+          -H "HTTP-Referer: https://gswap.io" \
+          -H "X-Title: gSwap Arbitrage Agent" \
+          -d @${tmpFile}`;
+
+        console.log(`   DEBUG: Calling OpenRouter... (attempt ${attempt})`);
+        const result = execSync(cmd, { encoding: 'utf-8', timeout: 30000 });
+        
+        // Clean up temp file
+        try { execSync(`rm ${tmpFile}`); } catch {}
+
+        // Parse response and HTTP code
+        const [body, httpCodeLine] = result.split('\nHTTP_CODE:');
+        const httpCode = parseInt(httpCodeLine || '0');
+        
+        console.log(`   DEBUG: HTTP ${httpCode}`);
+        console.log(`   DEBUG: Response preview: ${body.slice(0, 200)}...`);
+
+        let data;
+        try {
+          data = JSON.parse(body);
+        } catch {
+          throw new Error(`Invalid JSON response: ${body.slice(0, 200)}`);
         }
 
-        if (!response.ok) {
-          throw new Error(`LLM API error: ${response.status} ${response.statusText}`);
+        if (data.error) {
+          console.log(`   DEBUG: API error:`, data.error);
+          if (data.error.code === 429 || data.error.message?.includes('rate-limited')) {
+            const delay = attempt * 2000;
+            console.log(`   Rate limited (429), waiting ${delay}ms before retry ${attempt}/${retries}...`);
+            await this.sleep(delay);
+            continue;
+          }
+          throw new Error(`API error: ${data.error.message}`);
         }
 
-        const data = await response.json();
         return data.choices[0]?.message?.content || '';
       } catch (error: any) {
+        console.log(`   DEBUG: Error:`, error.message);
+        // Clean up temp file on error
+        try { execSync(`rm ${tmpFile}`); } catch {}
+        
         if (attempt === retries) {
           throw error;
         }
@@ -280,7 +311,9 @@ Also provide brief reasoning for your top pick.
   }
 
   private parseDecision(response: string): ExecutionDecision {
-    const lines = response.split('\n');
+    // Remove markdown bold (**)
+    const cleanResponse = response.replace(/\*\*/g, '');
+    const lines = cleanResponse.split('\n');
     const decision: Partial<ExecutionDecision> = {};
     
     for (const line of lines) {

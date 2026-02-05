@@ -41,7 +41,7 @@ const DEFAULT_CONFIG: AgentConfig = {
   gasPriceGwei: 20,
   ethPriceUSD: 2000,
   llmApiKey: process.env.OPENROUTER_API_KEY || '',
-  llmModel: process.env.OPENROUTER_MODEL || 'qwen/qwen3-coder:free',
+  llmModel: process.env.OPENROUTER_MODEL || 'arcee-ai/trinity-large-preview:free',
   rpcUrl: process.env.RPC_URL || 'http://localhost:8545',
   privateKey: process.env.PRIVATE_KEY || '',
   chainId: parseInt(process.env.CHAIN_ID || '1'),
