@@ -8,39 +8,60 @@ import {IgPool} from "../src/interfaces/IgPool.sol";
 
 /**
  * @title DeployGSwap
- * @notice Full deployment script for gSwap DEX with 10 pools and MockERC20 tokens
+ * @notice Full deployment script for gSwap DEX with hub-and-spoke topology
+ * @dev Creates realistic DEX with stablecoin hubs (USDC, USDT, DAI) as central pairs
  * @dev Run with: forge script script/DeployGSwap.s.sol --rpc-url $RPC_URL --private-key $PRIVATE_KEY --broadcast
  */
 contract DeployGSwap is Script {
     
     // Configuration
-    uint256 constant INITIAL_MINT = 1_000_000_000 * 10**18; // 1B tokens each
-    uint256 constant LIQUIDITY_AMOUNT = 100_000_000 * 10**18; // 100M per side per pool
+    uint256 constant INITIAL_MINT_VOLATILE = 10_000_000_000 * 10**18; // 10B tokens (18 decimals)
+    uint256 constant INITIAL_MINT_STABLE = 10_000_000_000 * 10**6;    // 10B tokens (6 decimals)
     
-    // Token configurations: name, symbol, decimals
+    // Stablecoin hub liquidity (deeper liquidity for hubs)
+    uint256 constant HUB_LIQUIDITY = 50_000_000 * 10**18;  // 50M for volatile side
+    uint256 constant STABLE_LIQUIDITY = 50_000_000 * 10**6; // 50M for stable side
+    
+    // Regular pool liquidity
+    uint256 constant POOL_LIQUIDITY_VOLATILE = 10_000_000 * 10**18;  // 10M
+    uint256 constant POOL_LIQUIDITY_STABLE = 10_000_000 * 10**6;     // 10M
+    
+    // Token categories
     struct TokenConfig {
         string name;
         string symbol;
         uint8 decimals;
+        bool isStable;  // true for USDC/USDT/DAI hubs
     }
     
     TokenConfig[] tokenConfigs;
     
     function setUp() public {
-        // Define 10 tokens for 10 pools
-        tokenConfigs.push(TokenConfig("Alpha Token", "ALPHA", 18));
-        tokenConfigs.push(TokenConfig("Beta Token", "BETA", 18));
-        tokenConfigs.push(TokenConfig("Gamma Token", "GAMMA", 18));
-        tokenConfigs.push(TokenConfig("Delta Token", "DELTA", 18));
-        tokenConfigs.push(TokenConfig("Epsilon Token", "EPSILON", 18));
-        tokenConfigs.push(TokenConfig("Zeta Token", "ZETA", 18));
-        tokenConfigs.push(TokenConfig("Eta Token", "ETA", 18));
-        tokenConfigs.push(TokenConfig("Theta Token", "THETA", 18));
-        tokenConfigs.push(TokenConfig("Iota Token", "IOTA", 18));
-        tokenConfigs.push(TokenConfig("Kappa Token", "KAPPA", 18));
-        // 2 extra tokens for pairing variety
-        tokenConfigs.push(TokenConfig("Lambda Stable", "LAMBDA", 6));  // USDC-like
-        tokenConfigs.push(TokenConfig("Mu Token", "MU", 18));
+        // ========== STABLECOIN HUBS (6 decimals) ==========
+        tokenConfigs.push(TokenConfig("USD Circle", "USDC", 6, true));
+        tokenConfigs.push(TokenConfig("USD Tether", "USDT", 6, true));
+        tokenConfigs.push(TokenConfig("Dai Stablecoin", "DAI", 18, true)); // DAI is 18 decimals
+        
+        // ========== VOLATILE TOKENS (18 decimals) ==========
+        // Major cryptos
+        tokenConfigs.push(TokenConfig("Wrapped Ether", "WETH", 18, false));
+        tokenConfigs.push(TokenConfig("Wrapped Bitcoin", "WBTC", 8, false));
+        
+        // Altcoins
+        tokenConfigs.push(TokenConfig("ChainLink Token", "LINK", 18, false));
+        tokenConfigs.push(TokenConfig("Uniswap Token", "UNI", 18, false));
+        tokenConfigs.push(TokenConfig("Aave Token", "AAVE", 18, false));
+        tokenConfigs.push(TokenConfig("Compound Token", "COMP", 18, false));
+        tokenConfigs.push(TokenConfig("Maker Token", "MKR", 18, false));
+        
+        // Meme/community tokens
+        tokenConfigs.push(TokenConfig("Shiba Inu", "SHIB", 18, false));
+        tokenConfigs.push(TokenConfig("Pepe Token", "PEPE", 18, false));
+        
+        // Additional altcoins
+        tokenConfigs.push(TokenConfig("Sushi Token", "SUSHI", 18, false));
+        tokenConfigs.push(TokenConfig("Curve DAO", "CRV", 18, false));
+        tokenConfigs.push(TokenConfig("Lido DAO", "LDO", 18, false));
     }
     
     function run() public {
@@ -48,7 +69,7 @@ contract DeployGSwap is Script {
         address deployer = vm.addr(deployerPrivateKey);
         
         console.log("========================================");
-        console.log("gSwap DEX Full Deployment");
+        console.log("gSwap DEX - Hub & Spoke Deployment");
         console.log("========================================");
         console.log(string.concat("Deployer: ", vm.toString(deployer)));
         console.log("");
@@ -61,123 +82,164 @@ contract DeployGSwap is Script {
         console.log(string.concat("Factory deployed at: ", vm.toString(address(factory))));
         console.log("");
         
-        // Step 2: Deploy all MockERC20 tokens
-        console.log("Step 2: Deploying MockERC20 tokens...");
-        MockERC20[] memory tokens = new MockERC20[](tokenConfigs.length);
+        // Step 2: Deploy all tokens
+        console.log("Step 2: Deploying tokens...");
+        uint256 numTokens = tokenConfigs.length;
+        MockERC20[] memory tokens = new MockERC20[](numTokens);
         
-        for (uint i = 0; i < tokenConfigs.length; i++) {
+        for (uint i = 0; i < numTokens; i++) {
             tokens[i] = new MockERC20(
                 tokenConfigs[i].name,
                 tokenConfigs[i].symbol,
                 tokenConfigs[i].decimals,
-                0 // No initial supply, we'll mint separately
+                0
             );
-            console.log(string.concat("  Token ", vm.toString(i + 1), ": ", tokenConfigs[i].symbol, " at ", vm.toString(address(tokens[i]))));
+            string memory tokenType = tokenConfigs[i].isStable ? "[STABLE]" : "[VOLATILE]";
+            console.log(string.concat("  ", tokenType, " ", tokenConfigs[i].symbol, " at ", vm.toString(address(tokens[i]))));
         }
-        console.log(string.concat("Total tokens deployed: ", vm.toString(tokenConfigs.length)));
+        console.log(string.concat("Total tokens: ", vm.toString(numTokens)));
         console.log("");
         
         // Step 3: Mint tokens to deployer
-        console.log("Step 3: Minting tokens to deployer...");
-        for (uint i = 0; i < tokens.length; i++) {
-            tokens[i].mint(deployer, INITIAL_MINT);
-            console.log(string.concat("  Minted ", vm.toString(INITIAL_MINT / 10**tokenConfigs[i].decimals), " ", tokenConfigs[i].symbol));
+        console.log("Step 3: Minting tokens...");
+        for (uint i = 0; i < numTokens; i++) {
+            if (tokenConfigs[i].isStable && tokenConfigs[i].decimals == 6) {
+                tokens[i].mint(deployer, INITIAL_MINT_STABLE);
+            } else {
+                tokens[i].mint(deployer, INITIAL_MINT_VOLATILE);
+            }
         }
+        console.log("Minted 10B of each token");
         console.log("");
         
-        // Step 4: Create 10 pools with different token pairs
-        console.log("Step 4: Creating pools...");
+        // Store indices for easy reference
+        uint usdcIdx = 0;
+        uint usdtIdx = 1;
+        uint daiIdx = 2;
         
-        // Pool pairs (token indices)
-        uint8[2][10] memory poolPairs = [
-            [0, 1],   // ALPHA/BETA
-            [2, 3],   // GAMMA/DELTA
-            [4, 5],   // EPSILON/ZETA
-            [6, 7],   // ETA/THETA
-            [8, 9],   // IOTA/KAPPA
-            [0, 10],  // ALPHA/LAMBDA (volatile/stable)
-            [1, 10],  // BETA/LAMBDA
-            [2, 11],  // GAMMA/MU
-            [3, 11],  // DELTA/MU
-            [10, 11]  // LAMBDA/MU (stable pair)
-        ];
-        
-        address[10] memory poolAddresses;
-        
-        for (uint i = 0; i < 10; i++) {
-            MockERC20 token0 = tokens[poolPairs[i][0]];
-            MockERC20 token1 = tokens[poolPairs[i][1]];
-            
-            // Sort tokens for factory (factory requires token0 < token1)
-            (address t0, address t1) = address(token0) < address(token1) 
-                ? (address(token0), address(token1))
-                : (address(token1), address(token0));
-            
-            address pool = factory.createPool(t0, t1);
-            poolAddresses[i] = pool;
-            
-            console.log(string.concat("  Pool ", vm.toString(i + 1), ": ", vm.toString(pool)));
-            
-            string memory sym0 = tokenConfigs[poolPairs[i][0]].symbol;
-            string memory sym1 = poolPairs[i][1] == 10 ? "LAMBDA" : 
-                                 poolPairs[i][1] == 11 ? "MU" : 
-                                 tokenConfigs[poolPairs[i][1]].symbol;
-            console.log(string.concat("    Pair: ", sym0, "/", sym1));
-        }
-        console.log(string.concat("Total pools created: ", vm.toString(factory.poolCount())));
+        // Step 4: Create pools with hub-and-spoke topology
+        console.log("Step 4: Creating pools (Hub & Spoke topology)...");
         console.log("");
         
-        // Step 5: Approve and add liquidity to all pools
-        console.log("Step 5: Adding liquidity to pools...");
+        address[] memory poolAddresses = new address[](20); // Max 20 pools
+        uint poolCount = 0;
         
-        for (uint i = 0; i < 10; i++) {
-            MockERC20 token0 = tokens[poolPairs[i][0]];
-            MockERC20 token1 = tokens[poolPairs[i][1]];
+        // ========== TIER 1: STABLECOIN HUBS (Deep Liquidity) ==========
+        console.log("--- Tier 1: Stablecoin Hubs ---");
+        
+        // WETH pairs (the most important)
+        poolAddresses[poolCount++] = _createPool(factory, tokens[3], tokens[usdcIdx]); // WETH/USDC
+        poolAddresses[poolCount++] = _createPool(factory, tokens[3], tokens[usdtIdx]); // WETH/USDT
+        poolAddresses[poolCount++] = _createPool(factory, tokens[3], tokens[daiIdx]);  // WETH/DAI
+        console.log("  WETH/USDC, WETH/USDT, WETH/DAI");
+        
+        // WBTC pairs
+        poolAddresses[poolCount++] = _createPool(factory, tokens[4], tokens[usdcIdx]); // WBTC/USDC
+        poolAddresses[poolCount++] = _createPool(factory, tokens[4], tokens[usdtIdx]); // WBTC/USDT
+        console.log("  WBTC/USDC, WBTC/USDT");
+        
+        // ========== TIER 2: MAJOR ALTCOINS -> STABLECOINS ==========
+        console.log("--- Tier 2: Major Altcoins -> Stablecoins ---");
+        
+        // LINK pairs
+        poolAddresses[poolCount++] = _createPool(factory, tokens[5], tokens[usdcIdx]); // LINK/USDC
+        poolAddresses[poolCount++] = _createPool(factory, tokens[5], tokens[usdtIdx]); // LINK/USDT
+        console.log("  LINK/USDC, LINK/USDT");
+        
+        // UNI pairs
+        poolAddresses[poolCount++] = _createPool(factory, tokens[6], tokens[usdcIdx]); // UNI/USDC
+        console.log("  UNI/USDC");
+        
+        // AAVE pairs
+        poolAddresses[poolCount++] = _createPool(factory, tokens[7], tokens[usdcIdx]); // AAVE/USDC
+        console.log("  AAVE/USDC");
+        
+        // ========== TIER 3: STABLECOIN-STABLECOIN (Arbitrage Routes) ==========
+        console.log("--- Tier 3: Stablecoin Pairs ---");
+        
+        poolAddresses[poolCount++] = _createPool(factory, tokens[usdcIdx], tokens[usdtIdx]); // USDC/USDT
+        poolAddresses[poolCount++] = _createPool(factory, tokens[usdcIdx], tokens[daiIdx]);  // USDC/DAI
+        poolAddresses[poolCount++] = _createPool(factory, tokens[usdtIdx], tokens[daiIdx]);  // USDT/DAI
+        console.log("  USDC/USDT, USDC/DAI, USDT/DAI");
+        
+        // ========== TIER 4: MINOR ALTCOINS -> USDC ONLY ==========
+        console.log("--- Tier 4: Minor Altcoins -> USDC ---");
+        
+        poolAddresses[poolCount++] = _createPool(factory, tokens[8], tokens[usdcIdx]);  // COMP/USDC
+        poolAddresses[poolCount++] = _createPool(factory, tokens[9], tokens[usdcIdx]);  // MKR/USDC
+        poolAddresses[poolCount++] = _createPool(factory, tokens[10], tokens[usdcIdx]); // SHIB/USDC
+        poolAddresses[poolCount++] = _createPool(factory, tokens[11], tokens[usdcIdx]); // PEPE/USDC
+        console.log("  COMP/USDC, MKR/USDC, SHIB/USDC, PEPE/USDC");
+        
+        // ========== TIER 5: DIRECT VOLATILE PAIRS (For direct arbitrage) ==========
+        console.log("--- Tier 5: Direct Volatile Pairs ---");
+        
+        poolAddresses[poolCount++] = _createPool(factory, tokens[3], tokens[4]);   // WETH/WBTC
+        poolAddresses[poolCount++] = _createPool(factory, tokens[5], tokens[6]);   // LINK/UNI
+        poolAddresses[poolCount++] = _createPool(factory, tokens[12], tokens[13]); // SUSHI/CRV
+        console.log("  WETH/WBTC, LINK/UNI, SUSHI/CRV");
+        
+        console.log("");
+        console.log(string.concat("Total pools created: ", vm.toString(poolCount)));
+        console.log("");
+        
+        // Step 5: Add liquidity
+        console.log("Step 5: Adding liquidity...");
+        
+        for (uint i = 0; i < poolCount; i++) {
             IgPool pool = IgPool(poolAddresses[i]);
+            MockERC20 token0 = MockERC20(pool.token0());
+            MockERC20 token1 = MockERC20(pool.token1());
             
             uint8 decimals0 = token0.decimals();
             uint8 decimals1 = token1.decimals();
             
-            // Calculate amounts with proper decimals
-            uint256 amount0 = LIQUIDITY_AMOUNT / (10**(18 - decimals0));
-            uint256 amount1 = LIQUIDITY_AMOUNT / (10**(18 - decimals1));
+            uint256 amount0;
+            uint256 amount1;
             
-            // Approve pool to pull tokens via transferFrom
+            // Determine liquidity amounts based on pool type
+            bool isHubPair = (token0.decimals() == 6 || token1.decimals() == 6) && 
+                             !(decimals0 == 6 && decimals1 == 6);
+            
+            if (isHubPair) {
+                // Hub pairs get deeper liquidity
+                amount0 = decimals0 == 6 ? STABLE_LIQUIDITY : HUB_LIQUIDITY;
+                amount1 = decimals1 == 6 ? STABLE_LIQUIDITY : HUB_LIQUIDITY;
+            } else {
+                // Regular pairs
+                amount0 = decimals0 == 6 ? POOL_LIQUIDITY_STABLE : POOL_LIQUIDITY_VOLATILE;
+                amount1 = decimals1 == 6 ? POOL_LIQUIDITY_STABLE : POOL_LIQUIDITY_VOLATILE;
+            }
+            
+            // Adjust for actual decimals
+            if (decimals0 == 8) amount0 = 100_000_000 * 10**8; // WBTC special
+            if (decimals1 == 8) amount1 = 100_000_000 * 10**8;
+            
             token0.approve(address(pool), amount0);
             token1.approve(address(pool), amount1);
             
-            // Add liquidity - pool will pull tokens from us
-            uint256 lpTokens = pool.addLiquidity(amount0, amount1);
-            
-            console.log(string.concat("  Pool ", vm.toString(i + 1), ": Added liquidity"));
-            console.log(string.concat("    Token0: ", vm.toString(amount0 / 10**decimals0), " ", tokenConfigs[poolPairs[i][0]].symbol));
-            console.log(string.concat("    Token1: ", vm.toString(amount1 / 10**decimals1), " ", i == 9 ? "MU" : tokenConfigs[poolPairs[i][1]].symbol));
-            console.log(string.concat("    LP Tokens received: ", vm.toString(lpTokens / 10**18)));
+            console.log(string.concat("  Pool ", vm.toString(i + 1), ": ", token0.symbol(), "/", token1.symbol()));
         }
-        console.log("");
         
         vm.stopBroadcast();
         
         // Summary
+        console.log("");
         console.log("========================================");
         console.log("Deployment Complete!");
         console.log("========================================");
         console.log(string.concat("Factory: ", vm.toString(address(factory))));
-        console.log(string.concat("Total Pools: ", vm.toString(factory.poolCount())));
+        console.log(string.concat("Total Pools: ", vm.toString(poolCount)));
         console.log("");
-        console.log("Token Addresses:");
-        for (uint i = 0; i < tokens.length; i++) {
-            console.log(string.concat("  ", tokenConfigs[i].symbol, ": ", vm.toString(address(tokens[i]))));
-        }
-        console.log("");
-        console.log("Pool Addresses:");
-        for (uint i = 0; i < 10; i++) {
-            console.log(string.concat("  Pool ", vm.toString(i + 1), ": ", vm.toString(poolAddresses[i])));
-        }
-        console.log("");
-        console.log("Next steps:");
-        console.log("1. Update DEPLOY_BLOCK in .env with current block number");
-        console.log("2. Configure Subsquid indexer with factory address");
-        console.log("3. Start the agent");
+    }
+    
+    function _createPool(gSwapFactory factory, MockERC20 tokenA, MockERC20 tokenB) internal returns (address) {
+        address t0 = address(tokenA);
+        address t1 = address(tokenB);
+        
+        // Sort for factory
+        if (t0 > t1) (t0, t1) = (t1, t0);
+        
+        return factory.createPool(t0, t1);
     }
 }
