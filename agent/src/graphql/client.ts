@@ -24,9 +24,15 @@ export interface Pool {
   totalSupply: string;
   blockNumber: string;
   timestamp: string;
-  price0: string;
-  price1: string;
-  liquidityUSD: string;
+  updatedAt: string;
+  createdAt: string;
+  volumeToken0: string;
+  volumeToken1: string;
+  txCount: number;
+  // Computed fields
+  price0?: string;
+  price1?: string;
+  liquidityUSD?: string;
 }
 
 export interface GraphEdge {
@@ -105,6 +111,11 @@ export class SubsquidClient {
           totalSupply
           blockNumber
           timestamp
+          updatedAt
+          createdAt
+          volumeToken0
+          volumeToken1
+          txCount
           price0
           price1
           liquidityUSD
@@ -139,6 +150,11 @@ export class SubsquidClient {
           totalSupply
           blockNumber
           timestamp
+          updatedAt
+          createdAt
+          volumeToken0
+          volumeToken1
+          txCount
           price0
           price1
           liquidityUSD
@@ -173,6 +189,11 @@ export class SubsquidClient {
           totalSupply
           blockNumber
           timestamp
+          updatedAt
+          createdAt
+          volumeToken0
+          volumeToken1
+          txCount
           price0
           price1
           liquidityUSD

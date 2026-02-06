@@ -1,9 +1,20 @@
-# gSwap GraphQL Schema
+# gSwap GraphQL Schema - State Only
+# Tracks current pool state, not historical events
+
+type Factory @entity {
+  id: ID! @id
+  address: String! @unique
+  poolCount: Int!
+  pools: [Pool!]! @derivedFrom(field: "factory")
+  totalVolumeUSD: BigInt!
+  totalFeesUSD: BigInt!
+}
 
 type Token @entity {
   id: ID! @id
   address: String! @unique
   symbol: String
+  name: String
   decimals: Int
   pools0: [Pool!]! @derivedFrom(field: "token0")
   pools1: [Pool!]! @derivedFrom(field: "token1")
@@ -16,88 +27,21 @@ type Pool @entity {
   factory: Factory!
   token0: Token!
   token1: Token!
+  
+  # Current state (updated on every Sync event)
   reserve0: BigInt!
   reserve1: BigInt!
   swapFee: Int!
   totalSupply: BigInt!
+  
+  # Metadata
   blockNumber: BigInt!
   timestamp: DateTime!
   createdAt: DateTime!
   updatedAt: DateTime!
   
-  # Derived
-  swaps: [Swap!]! @derivedFrom(field: "pool")
-  mints: [Mint!]! @derivedFrom(field: "pool")
-  burns: [Burn!]! @derivedFrom(field: "pool")
-  syncs: [Sync!]! @derivedFrom(field: "pool")
-  
-  # Computed
-  liquidityUSD: BigInt
-  volumeUSD: BigInt
-}
-
-type Factory @entity {
-  id: ID! @id
-  address: String! @unique
-  poolCount: Int!
-  pools: [Pool!]! @derivedFrom(field: "factory")
-  totalVolumeUSD: BigInt!
-  totalFeesUSD: BigInt!
-}
-
-type Swap @entity {
-  id: ID! @id
-  pool: Pool!
-  sender: String!
-  tokenIn: Token!
-  tokenOut: Token!
-  amountIn: BigInt!
-  amountOut: BigInt!
-  fee: BigInt!
-  blockNumber: BigInt!
-  timestamp: DateTime!
-  transactionHash: String!
-}
-
-type Mint @entity {
-  id: ID! @id
-  pool: Pool!
-  sender: String!
-  amount0: BigInt!
-  amount1: BigInt!
-  lpTokens: BigInt!
-  blockNumber: BigInt!
-  timestamp: DateTime!
-  transactionHash: String!
-}
-
-type Burn @entity @index(fields: ["pool", "timestamp"]) {
-  id: ID! @id
-  pool: Pool!
-  sender: String!
-  amount0: BigInt!
-  amount1: BigInt!
-  lpTokens: BigInt!
-  blockNumber: BigInt!
-  timestamp: DateTime!
-  transactionHash: String!
-}
-
-type Sync @entity @index(fields: ["pool", "timestamp"]) {
-  id: ID! @id
-  pool: Pool!
-  reserve0: BigInt!
-  reserve1: BigInt!
-  blockNumber: BigInt!
-  timestamp: DateTime!
-  transactionHash: String!
-}
-
-# For arbitrage route queries
-type ArbitrageRoute {
-  id: ID!
-  tokens: [String!]!
-  pools: [String!]!
-  expectedProfit: BigInt
-  timestamp: DateTime!
+  # Aggregated stats (updated on events, not stored individually)
+  volumeToken0: BigInt!
+  volumeToken1: BigInt!
+  txCount: Int!
 }

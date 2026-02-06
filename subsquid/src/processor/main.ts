@@ -4,10 +4,9 @@ import { lookupArchive } from '@subsquid/archive-registry';
 import { Store } from '@subsquid/typeorm-store';
 import * as gSwapFactory from '../abi/gSwapFactory.js';
 import * as gPool from '../abi/gPool.js';
-import { Factory, Pool, Token, Swap, Mint, Burn, Sync } from '../model/index.js';
+import { Factory, Pool, Token } from '../model/index.js';
 
 const FACTORY_ADDRESS = process.env.FACTORY_ADDRESS || '0x0000000000000000000000000000000000000000';
-// Use DEPLOY_BLOCK to start indexing from contract deployment (skip earlier blocks)
 const START_BLOCK = parseInt(process.env.DEPLOY_BLOCK || process.env.START_BLOCK || '0');
 
 const processor = new EvmBatchProcessor()
@@ -56,10 +55,6 @@ processor.run(new TypeormDatabase({ supportHotBlocks: true }), async (ctx) => {
   const factories: Map<string, Factory> = new Map();
   const pools: Map<string, Pool> = new Map();
   const tokens: Map<string, Token> = new Map();
-  const swaps: Swap[] = [];
-  const mints: Mint[] = [];
-  const burns: Burn[] = [];
-  const syncs: Sync[] = [];
 
   // Helper to get or create token
   async function getToken(address: string): Promise<Token> {
@@ -72,6 +67,9 @@ processor.run(new TypeormDatabase({ supportHotBlocks: true }), async (ctx) => {
           id: key,
           address: key,
           totalPools: 0,
+          volumeToken0: 0n,
+          volumeToken1: 0n,
+          txCount: 0,
         });
         tokens.set(key, token);
       }
@@ -117,7 +115,7 @@ processor.run(new TypeormDatabase({ supportHotBlocks: true }), async (ctx) => {
       // Handle PoolCreated
       if (log.address.toLowerCase() === FACTORY_ADDRESS.toLowerCase()) {
         if (log.topics[0] === gSwapFactory.events.PoolCreated.topic) {
-          const { pool, token0: token0Addr, token1: token1Addr } = gSwapFactory.events.PoolCreated.decode(log);
+          const { pool, token0: token0Addr, token1: token1Addr, index } = gSwapFactory.events.PoolCreated.decode(log);
           
           const factory = await getFactory(FACTORY_ADDRESS);
           const token0 = await getToken(token0Addr);
@@ -126,7 +124,7 @@ processor.run(new TypeormDatabase({ supportHotBlocks: true }), async (ctx) => {
           token0.totalPools++;
           token1.totalPools++;
 
-          // Create new pool
+          // Create new pool with initial state
           const newPool = new Pool({
             id: pool.toLowerCase(),
             address: pool.toLowerCase(),
@@ -135,121 +133,95 @@ processor.run(new TypeormDatabase({ supportHotBlocks: true }), async (ctx) => {
             token1,
             reserve0: 0n,
             reserve1: 0n,
-            swapFee: 30,
+            swapFee: 30, // 0.3%
             totalSupply: 0n,
             blockNumber: BigInt(block.header.height),
             timestamp: new Date(block.header.timestamp),
             createdAt: new Date(block.header.timestamp),
             updatedAt: new Date(block.header.timestamp),
+            volumeToken0: 0n,
+            volumeToken1: 0n,
+            txCount: 0,
           });
 
           pools.set(newPool.id, newPool);
           factory.poolCount++;
           poolAddresses.push(pool);
 
-          ctx.log.info(`Pool created: ${pool} - ${token0Addr}/${token1Addr}`);
+          ctx.log.info(`Pool created: ${pool} - ${token0Addr}/${token1Addr} (index: ${index})`);
         }
       }
 
-      // Handle pool events
+      // Handle pool events - update state only, don't store events
       const pool = await getPool(log.address);
       if (!pool) continue;
 
       const topic0 = log.topics[0];
 
-      // Sync - update reserves
+      // Sync - update reserves (emitted after every swap/mint/burn)
       if (topic0 === gPool.events.Sync.topic) {
         const { reserve0, reserve1 } = gPool.events.Sync.decode(log);
         pool.reserve0 = reserve0;
         pool.reserve1 = reserve1;
         pool.updatedAt = new Date(block.header.timestamp);
 
-        syncs.push(new Sync({
-          id: `${log.id}`,
-          pool,
-          reserve0,
-          reserve1,
-          blockNumber: BigInt(block.header.height),
-          timestamp: new Date(block.header.timestamp),
-          transactionHash: log.transactionHash,
-        }));
-
         ctx.log.debug(`Sync: ${pool.address} - R0: ${reserve0}, R1: ${reserve1}`);
       }
 
-      // Swap
+      // Swap - update volume stats
       else if (topic0 === gPool.events.Swap.topic) {
         const { sender, amountIn, amountOut, tokenIn: tokenInAddr, tokenOut: tokenOutAddr } = gPool.events.Swap.decode(log);
         
         const tokenIn = await getToken(tokenInAddr);
         const tokenOut = await getToken(tokenOutAddr);
-        const fee = (amountIn * 30n) / 10000n;
 
-        swaps.push(new Swap({
-          id: `${log.id}`,
-          pool,
-          sender: sender.toLowerCase(),
-          tokenIn,
-          tokenOut,
-          amountIn,
-          amountOut,
-          fee,
-          blockNumber: BigInt(block.header.height),
-          timestamp: new Date(block.header.timestamp),
-          transactionHash: log.transactionHash,
-        }));
+        // Update pool stats (not storing individual swap)
+        if (tokenIn.id === pool.token0.id) {
+          pool.volumeToken0 += amountIn;
+          pool.volumeToken1 += amountOut;
+        } else {
+          pool.volumeToken0 += amountOut;
+          pool.volumeToken1 += amountIn;
+        }
+        pool.txCount++;
+        pool.updatedAt = new Date(block.header.timestamp);
+
+        // Update factory totals
+        const factory = await getFactory(FACTORY_ADDRESS);
+        factory.totalVolumeUSD += amountIn; // Simplified - should convert to USD
+        factory.totalFeesUSD += (amountIn * 30n) / 10000n;
 
         ctx.log.debug(`Swap: ${tokenInAddr.slice(0, 8)} -> ${tokenOutAddr.slice(0, 8)} | In: ${amountIn}, Out: ${amountOut}`);
       }
 
-      // Mint
+      // Mint - update total supply and tx count
       else if (topic0 === gPool.events.Mint.topic) {
         const { sender, amount0, amount1, lpTokens } = gPool.events.Mint.decode(log);
         
-        mints.push(new Mint({
-          id: `${log.id}`,
-          pool,
-          sender: sender.toLowerCase(),
-          amount0,
-          amount1,
-          lpTokens,
-          blockNumber: BigInt(block.header.height),
-          timestamp: new Date(block.header.timestamp),
-          transactionHash: log.transactionHash,
-        }));
+        pool.totalSupply += lpTokens;
+        pool.txCount++;
+        pool.updatedAt = new Date(block.header.timestamp);
 
         ctx.log.debug(`Mint: ${pool.address} - LP: ${lpTokens}`);
       }
 
-      // Burn
+      // Burn - update total supply and tx count
       else if (topic0 === gPool.events.Burn.topic) {
         const { sender, amount0, amount1, lpTokens } = gPool.events.Burn.decode(log);
         
-        burns.push(new Burn({
-          id: `${log.id}`,
-          pool,
-          sender: sender.toLowerCase(),
-          amount0,
-          amount1,
-          lpTokens,
-          blockNumber: BigInt(block.header.height),
-          timestamp: new Date(block.header.timestamp),
-          transactionHash: log.transactionHash,
-        }));
+        pool.totalSupply -= lpTokens;
+        pool.txCount++;
+        pool.updatedAt = new Date(block.header.timestamp);
 
         ctx.log.debug(`Burn: ${pool.address} - LP: ${lpTokens}`);
       }
     }
   }
 
-  // Save all entities
+  // Save all entities (no historical events to insert)
   await ctx.store.save([...factories.values()]);
   await ctx.store.save([...tokens.values()]);
   await ctx.store.save([...pools.values()]);
-  await ctx.store.insert(swaps);
-  await ctx.store.insert(mints);
-  await ctx.store.insert(burns);
-  await ctx.store.insert(syncs);
 
-  ctx.log.info(`Processed ${ctx.blocks.length} blocks, ${swaps.length} swaps, ${mints.length} mints, ${burns.length} burns`);
+  ctx.log.info(`Processed ${ctx.blocks.length} blocks, ${pools.size} pools updated`);
 });
