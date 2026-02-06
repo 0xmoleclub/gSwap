@@ -67,9 +67,6 @@ processor.run(new TypeormDatabase({ supportHotBlocks: true }), async (ctx) => {
           id: key,
           address: key,
           totalPools: 0,
-          volumeToken0: 0n,
-          volumeToken1: 0n,
-          txCount: 0,
         });
         tokens.set(key, token);
       }
@@ -115,7 +112,7 @@ processor.run(new TypeormDatabase({ supportHotBlocks: true }), async (ctx) => {
       // Handle PoolCreated
       if (log.address.toLowerCase() === FACTORY_ADDRESS.toLowerCase()) {
         if (log.topics[0] === gSwapFactory.events.PoolCreated.topic) {
-          const { pool, token0: token0Addr, token1: token1Addr, index } = gSwapFactory.events.PoolCreated.decode(log);
+          const { pool, token0: token0Addr, token1: token1Addr } = gSwapFactory.events.PoolCreated.decode(log);
           
           const factory = await getFactory(FACTORY_ADDRESS);
           const token0 = await getToken(token0Addr);
@@ -148,7 +145,7 @@ processor.run(new TypeormDatabase({ supportHotBlocks: true }), async (ctx) => {
           factory.poolCount++;
           poolAddresses.push(pool);
 
-          ctx.log.info(`Pool created: ${pool} - ${token0Addr}/${token1Addr} (index: ${index})`);
+          ctx.log.info(`Pool created: ${pool} - ${token0Addr}/${token1Addr}`);
         }
       }
 

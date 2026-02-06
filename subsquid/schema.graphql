@@ -2,7 +2,7 @@
 # Tracks current pool state, not historical events
 
 type Factory @entity {
-  id: ID! @id
+  id: ID!
   address: String! @unique
   poolCount: Int!
   pools: [Pool!]! @derivedFrom(field: "factory")
@@ -11,7 +11,7 @@ type Factory @entity {
 }
 
 type Token @entity {
-  id: ID! @id
+  id: ID!
   address: String! @unique
   symbol: String
   name: String
@@ -22,7 +22,7 @@ type Token @entity {
 }
 
 type Pool @entity {
-  id: ID! @id
+  id: ID!
   address: String! @unique
   factory: Factory!
   token0: Token!
