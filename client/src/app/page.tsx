@@ -2,8 +2,6 @@
 
 import { useState } from 'react';
 import { Token } from '@/types/token';
-import { TOKENS } from '@/data/tokens';
-import { POOLS } from '@/data/pools';
 import { useThreeScene } from '@/hooks/useThreeScene';
 import { useIndexerData } from '@/hooks/useIndexerData';
 import { LoadingOverlay } from '@/components/LoadingOverlay';
@@ -16,12 +14,7 @@ export default function HomePage() {
   const [selectedNode, setSelectedNode] = useState<Token | null>(null);
   const [isPanelOpen, setIsPanelOpen] = useState(false);
 
-  // Fetch live data from indexer; fall back to static data on failure
-  const { data: indexerData, loading: indexerLoading } = useIndexerData();
-
-  const tokens = indexerData?.tokens ?? TOKENS;
-  const pools = indexerData?.pools ?? POOLS;
-  const centralTokenId = indexerData?.centralTokenId ?? 'DOT';
+  const { data: indexerData, loading: indexerLoading, error } = useIndexerData();
 
   const handleNodeSelect = (token: Token | null) => {
     setSelectedNode(token);
@@ -29,17 +22,34 @@ export default function HomePage() {
   };
 
   const { mountRef, loading: sceneLoading } = useThreeScene({
-    tokens,
-    pools,
-    centralTokenId,
+    tokens: indexerData?.tokens ?? [],
+    pools: indexerData?.pools ?? [],
+    centralTokenId: indexerData?.centralTokenId ?? '',
     onNodeSelect: handleNodeSelect,
   });
+
+  const isLoading = indexerLoading || sceneLoading;
 
   return (
     <div className="relative w-full h-screen bg-black overflow-hidden font-sans text-white">
       <style>{globalStyles}</style>
 
-      {(sceneLoading || indexerLoading) && <LoadingOverlay />}
+      {isLoading && <LoadingOverlay />}
+
+      {!indexerLoading && error && (
+        <div className="absolute inset-0 z-20 flex items-center justify-center">
+          <div className="glass-panel p-8 rounded-2xl max-w-md text-center space-y-4">
+            <p className="text-red-400 font-bold text-lg">Failed to load pool data</p>
+            <p className="text-gray-400 text-sm">{error.message}</p>
+            <button
+              onClick={() => window.location.reload()}
+              className="px-6 py-2 rounded-xl bg-polkadot-pink hover:bg-pink-600 text-white font-bold text-sm transition"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      )}
 
       <div ref={mountRef} className="absolute inset-0 z-0 grid-bg" />
 
@@ -51,7 +61,7 @@ export default function HomePage() {
           <HomeView
             selectedNode={selectedNode}
             isPanelOpen={isPanelOpen}
-            pools={pools}
+            pools={indexerData?.pools ?? []}
             stats={indexerData?.stats}
             onClosePanel={() => setIsPanelOpen(false)}
           />
