@@ -7,10 +7,11 @@ import { createLabel, getSphericalPosition, createCurve } from '@/utils/three-he
 interface UseThreeSceneProps {
   tokens: Token[];
   pools: Pool[];
+  centralTokenId?: string;
   onNodeSelect: (token: Token | null) => void;
 }
 
-export function useThreeScene({ tokens, pools, onNodeSelect }: UseThreeSceneProps) {
+export function useThreeScene({ tokens, pools, centralTokenId = 'DOT', onNodeSelect }: UseThreeSceneProps) {
   const mountRef = useRef<HTMLDivElement>(null);
   const [loading, setLoading] = useState(true);
   const onNodeSelectRef = useRef(onNodeSelect);
@@ -65,11 +66,14 @@ export function useThreeScene({ tokens, pools, onNodeSelect }: UseThreeSceneProp
       group.position.set(pos.x, pos.y, pos.z);
       group.userData = { ...token };
 
-      if (token.id === 'DOT') {
+      const isCentral = token.id === centralTokenId;
+      const displayName = token.symbol || token.name || token.id;
+
+      if (isCentral) {
         const geo = new THREE.SphereGeometry(3, 64, 64);
         const mat = new THREE.MeshPhysicalMaterial({
-          color: 0xE6007A,
-          emissive: 0xE6007A,
+          color: token.color,
+          emissive: token.color,
           emissiveIntensity: 1.5,
           roughness: 0.2,
           metalness: 0.8,
@@ -77,7 +81,7 @@ export function useThreeScene({ tokens, pools, onNodeSelect }: UseThreeSceneProp
         });
         const mesh = new THREE.Mesh(geo, mat);
         group.add(mesh);
-        const label = createLabel("DOT", true, 60);
+        const label = createLabel(displayName, true, 60);
         label.position.set(0, 4.5, 0);
         group.add(label);
       } else {
@@ -92,8 +96,9 @@ export function useThreeScene({ tokens, pools, onNodeSelect }: UseThreeSceneProp
         );
         group.add(core);
 
-        if (!token.id.startsWith('T')) {
-          const label = createLabel(token.id, false, 30);
+        // Show label for tokens with a known symbol/name
+        if (token.symbol || !token.id.startsWith('T')) {
+          const label = createLabel(displayName, false, 30);
           label.position.set(0, 1.5, 0);
           group.add(label);
         }
@@ -257,7 +262,7 @@ export function useThreeScene({ tokens, pools, onNodeSelect }: UseThreeSceneProp
       
       document.body.style.cursor = 'default';
     };
-  }, [tokens, pools]);
+  }, [tokens, pools, centralTokenId]);
 
   return { mountRef, loading };
 }

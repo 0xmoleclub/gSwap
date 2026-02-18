@@ -1,25 +1,28 @@
-import { EvmBatchProcessor } from '@subsquid/evm-processor';
-import { TypeormDatabase } from '@subsquid/typeorm-store';
-import { lookupArchive } from '@subsquid/archive-registry';
-import { Store } from '@subsquid/typeorm-store';
-import * as gSwapFactory from '../abi/gSwapFactory.js';
-import * as gPool from '../abi/gPool.js';
-import { Factory, Pool, Token } from '../model/index.js';
+import { EvmBatchProcessor } from '@subsquid/evm-processor'
+import { TypeormDatabase } from '@subsquid/typeorm-store'
+import * as gSwapFactory from '../abi/gSwapFactory'
+import * as gPool from '../abi/gPool'
+import * as erc20 from '../abi/erc20'
+import { Factory, Pool, Token } from '../model'
 
-const FACTORY_ADDRESS = process.env.FACTORY_ADDRESS || '0x0000000000000000000000000000000000000000';
-const START_BLOCK = parseInt(process.env.DEPLOY_BLOCK || process.env.START_BLOCK || '0');
+const FACTORY_ADDRESS = (process.env.FACTORY_ADDRESS || '').toLowerCase()
+const START_BLOCK = parseInt(process.env.DEPLOY_BLOCK || process.env.START_BLOCK || '0')
 
 const processor = new EvmBatchProcessor()
-  .setDataSource({
-    archive: lookupArchive('polkadot-hub-evm', { type: 'EVM' }),
-    chain: process.env.RPC_ENDPOINT,
+
+// Use SQD Network gateway for bulk historical data (fast)
+if (process.env.ARCHIVE_URL) {
+  processor.setGateway(process.env.ARCHIVE_URL)
+}
+
+// Use RPC endpoint for real-time data (head of chain)
+processor
+  .setRpcEndpoint({
+    url: process.env.RPC_ENDPOINT!,
+    rateLimit: 10,
   })
   .setFinalityConfirmation(10)
   .setFields({
-    transaction: {
-      hash: true,
-      from: true,
-    },
     log: {
       address: true,
       topics: true,
@@ -28,58 +31,50 @@ const processor = new EvmBatchProcessor()
     },
   })
   .setBlockRange({ from: START_BLOCK })
-  // Watch factory for new pools
+  // Watch factory for PoolCreated events
   .addLog({
     address: [FACTORY_ADDRESS],
     topic0: [gSwapFactory.events.PoolCreated.topic],
-  });
+  })
+  // Watch ALL contracts for pool event topics (wildcard - no address filter).
+  // We filter by known pool addresses in the handler.
+  .addLog({
+    topic0: [
+      gPool.events.Swap.topic,
+      gPool.events.Mint.topic,
+      gPool.events.Burn.topic,
+      gPool.events.Sync.topic,
+    ],
+  })
 
-// Keep track of pool addresses to watch
-let poolAddresses: string[] = [];
-
-function addPoolTopic() {
-  if (poolAddresses.length > 0) {
-    processor.addLog({
-      address: poolAddresses.map(a => a.toLowerCase()),
-      topic0: [
-        gPool.events.Swap.topic,
-        gPool.events.Mint.topic,
-        gPool.events.Burn.topic,
-        gPool.events.Sync.topic,
-      ],
-    });
-  }
-}
+// Set of known pool addresses, persisted across batches.
+// Populated from DB on first batch + PoolCreated events during processing.
+let knownPools = new Set<string>()
+let poolsPreloaded = false
 
 processor.run(new TypeormDatabase({ supportHotBlocks: true }), async (ctx) => {
-  const factories: Map<string, Factory> = new Map();
-  const pools: Map<string, Pool> = new Map();
-  const tokens: Map<string, Token> = new Map();
-
-  // Helper to get or create token
-  async function getToken(address: string): Promise<Token> {
-    const key = address.toLowerCase();
-    let token = tokens.get(key);
-    if (!token) {
-      token = await ctx.store.get(Token, key);
-      if (!token) {
-        token = new Token({
-          id: key,
-          address: key,
-          totalPools: 0,
-        });
-        tokens.set(key, token);
-      }
+  // Pre-load known pool addresses from DB on first batch (handles restarts)
+  if (!poolsPreloaded) {
+    const existingPools = await ctx.store.find(Pool, {})
+    for (const p of existingPools) {
+      knownPools.add(p.address.toLowerCase())
     }
-    return token;
+    poolsPreloaded = true
+    if (knownPools.size > 0) {
+      ctx.log.info(`Pre-loaded ${knownPools.size} known pool addresses from DB`)
+    }
   }
 
-  // Helper to get or create factory
+  // In-memory caches for the current batch
+  const factories = new Map<string, Factory>()
+  const pools = new Map<string, Pool>()
+  const tokens = new Map<string, Token>()
+
   async function getFactory(address: string): Promise<Factory> {
-    const key = address.toLowerCase();
-    let factory = factories.get(key);
+    const key = address.toLowerCase()
+    let factory = factories.get(key)
     if (!factory) {
-      factory = await ctx.store.get(Factory, key);
+      factory = await ctx.store.get(Factory, key)
       if (!factory) {
         factory = new Factory({
           id: key,
@@ -87,138 +82,159 @@ processor.run(new TypeormDatabase({ supportHotBlocks: true }), async (ctx) => {
           poolCount: 0,
           totalVolumeUSD: 0n,
           totalFeesUSD: 0n,
-        });
-        factories.set(key, factory);
+        })
       }
+      factories.set(key, factory)
     }
-    return factory;
+    return factory
   }
 
-  // Helper to get or create pool
+  async function getToken(address: string, blockHeader: any): Promise<Token> {
+    const key = address.toLowerCase()
+    let token = tokens.get(key)
+    if (!token) {
+      token = await ctx.store.get(Token, key)
+      if (!token) {
+        token = new Token({
+          id: key,
+          address: key,
+          totalPools: 0,
+        })
+
+        // Fetch ERC20 metadata via RPC
+        try {
+          const contract = new erc20.Contract(ctx, blockHeader, key)
+          const [symbol, name, decimals] = await Promise.allSettled([
+            contract.symbol(),
+            contract.name(),
+            contract.decimals(),
+          ])
+          if (symbol.status === 'fulfilled') token.symbol = symbol.value
+          if (name.status === 'fulfilled') token.name = name.value
+          if (decimals.status === 'fulfilled') token.decimals = decimals.value
+          ctx.log.info(`Token metadata fetched: ${token.symbol ?? 'unknown'} (${key.slice(0, 10)}...)`)
+        } catch (e) {
+          ctx.log.warn(`Failed to fetch token metadata for ${key}: ${e}`)
+        }
+      }
+      tokens.set(key, token)
+    }
+    return token
+  }
+
   async function getPool(address: string): Promise<Pool | undefined> {
-    const key = address.toLowerCase();
-    let pool = pools.get(key);
+    const key = address.toLowerCase()
+    let pool = pools.get(key)
     if (!pool) {
-      pool = await ctx.store.get(Pool, key);
+      // Load with relations so token0/token1/factory are available
+      const results = await ctx.store.find(Pool, {
+        where: { id: key },
+        relations: { token0: true, token1: true, factory: true },
+      } as any)
+      pool = results[0]
       if (pool) {
-        pools.set(key, pool);
+        pools.set(key, pool)
       }
     }
-    return pool;
+    return pool
   }
 
-  for (let block of ctx.blocks) {
-    for (let log of block.logs) {
-      // Handle PoolCreated
-      if (log.address.toLowerCase() === FACTORY_ADDRESS.toLowerCase()) {
-        if (log.topics[0] === gSwapFactory.events.PoolCreated.topic) {
-          const { pool, token0: token0Addr, token1: token1Addr } = gSwapFactory.events.PoolCreated.decode(log);
-          
-          const factory = await getFactory(FACTORY_ADDRESS);
-          const token0 = await getToken(token0Addr);
-          const token1 = await getToken(token1Addr);
+  for (const block of ctx.blocks) {
+    for (const log of block.logs) {
+      const logAddress = log.address.toLowerCase()
+      const topic0 = log.topics[0]
 
-          token0.totalPools++;
-          token1.totalPools++;
+      // --- Handle PoolCreated from factory ---
+      if (logAddress === FACTORY_ADDRESS && topic0 === gSwapFactory.events.PoolCreated.topic) {
+        const { pool: poolAddr, token0: token0Addr, token1: token1Addr } =
+          gSwapFactory.events.PoolCreated.decode(log)
 
-          // Create new pool with initial state
-          const newPool = new Pool({
-            id: pool.toLowerCase(),
-            address: pool.toLowerCase(),
-            factory,
-            token0,
-            token1,
-            reserve0: 0n,
-            reserve1: 0n,
-            swapFee: 30, // 0.3%
-            totalSupply: 0n,
-            blockNumber: BigInt(block.header.height),
-            timestamp: new Date(block.header.timestamp),
-            createdAt: new Date(block.header.timestamp),
-            updatedAt: new Date(block.header.timestamp),
-            volumeToken0: 0n,
-            volumeToken1: 0n,
-            txCount: 0,
-          });
+        const factory = await getFactory(FACTORY_ADDRESS)
+        const token0 = await getToken(token0Addr, block.header)
+        const token1 = await getToken(token1Addr, block.header)
 
-          pools.set(newPool.id, newPool);
-          factory.poolCount++;
-          poolAddresses.push(pool);
+        token0.totalPools++
+        token1.totalPools++
 
-          ctx.log.info(`Pool created: ${pool} - ${token0Addr}/${token1Addr}`);
-        }
+        const newPool = new Pool({
+          id: poolAddr.toLowerCase(),
+          address: poolAddr.toLowerCase(),
+          factory,
+          token0,
+          token1,
+          reserve0: 0n,
+          reserve1: 0n,
+          swapFee: 30, // 0.3%
+          totalSupply: 0n,
+          blockNumber: BigInt(block.header.height),
+          timestamp: new Date(block.header.timestamp),
+          createdAt: new Date(block.header.timestamp),
+          updatedAt: new Date(block.header.timestamp),
+          volumeToken0: 0n,
+          volumeToken1: 0n,
+          txCount: 0,
+        })
+
+        pools.set(newPool.id, newPool)
+        knownPools.add(newPool.id)
+        factory.poolCount++
+
+        ctx.log.info(
+          `Pool created: ${poolAddr} — ${token0.symbol ?? token0Addr.slice(0, 8)}/${token1.symbol ?? token1Addr.slice(0, 8)}`
+        )
+        continue
       }
 
-      // Handle pool events - update state only, don't store events
-      const pool = await getPool(log.address);
-      if (!pool) continue;
+      // --- Handle pool events (Sync, Swap, Mint, Burn) ---
+      // Skip logs from contracts that are not known pools
+      if (!knownPools.has(logAddress)) continue
 
-      const topic0 = log.topics[0];
+      const pool = await getPool(logAddress)
+      if (!pool) continue
 
-      // Sync - update reserves (emitted after every swap/mint/burn)
       if (topic0 === gPool.events.Sync.topic) {
-        const { reserve0, reserve1 } = gPool.events.Sync.decode(log);
-        pool.reserve0 = reserve0;
-        pool.reserve1 = reserve1;
-        pool.updatedAt = new Date(block.header.timestamp);
+        const { reserve0, reserve1 } = gPool.events.Sync.decode(log)
+        pool.reserve0 = reserve0
+        pool.reserve1 = reserve1
+        pool.blockNumber = BigInt(block.header.height)
+        pool.updatedAt = new Date(block.header.timestamp)
+      } else if (topic0 === gPool.events.Swap.topic) {
+        const { amountIn, amountOut, tokenIn: tokenInAddr } = gPool.events.Swap.decode(log)
 
-        ctx.log.debug(`Sync: ${pool.address} - R0: ${reserve0}, R1: ${reserve1}`);
-      }
-
-      // Swap - update volume stats
-      else if (topic0 === gPool.events.Swap.topic) {
-        const { sender, amountIn, amountOut, tokenIn: tokenInAddr, tokenOut: tokenOutAddr } = gPool.events.Swap.decode(log);
-        
-        const tokenIn = await getToken(tokenInAddr);
-        const tokenOut = await getToken(tokenOutAddr);
-
-        // Update pool stats (not storing individual swap)
-        if (tokenIn.id === pool.token0.id) {
-          pool.volumeToken0 += amountIn;
-          pool.volumeToken1 += amountOut;
+        if (tokenInAddr.toLowerCase() === pool.token0.id) {
+          pool.volumeToken0 += amountIn
+          pool.volumeToken1 += amountOut
         } else {
-          pool.volumeToken0 += amountOut;
-          pool.volumeToken1 += amountIn;
+          pool.volumeToken0 += amountOut
+          pool.volumeToken1 += amountIn
         }
-        pool.txCount++;
-        pool.updatedAt = new Date(block.header.timestamp);
+        pool.txCount++
+        pool.updatedAt = new Date(block.header.timestamp)
 
-        // Update factory totals
-        const factory = await getFactory(FACTORY_ADDRESS);
-        factory.totalVolumeUSD += amountIn; // Simplified - should convert to USD
-        factory.totalFeesUSD += (amountIn * 30n) / 10000n;
-
-        ctx.log.debug(`Swap: ${tokenInAddr.slice(0, 8)} -> ${tokenOutAddr.slice(0, 8)} | In: ${amountIn}, Out: ${amountOut}`);
-      }
-
-      // Mint - update total supply and tx count
-      else if (topic0 === gPool.events.Mint.topic) {
-        const { sender, amount0, amount1, lpTokens } = gPool.events.Mint.decode(log);
-        
-        pool.totalSupply += lpTokens;
-        pool.txCount++;
-        pool.updatedAt = new Date(block.header.timestamp);
-
-        ctx.log.debug(`Mint: ${pool.address} - LP: ${lpTokens}`);
-      }
-
-      // Burn - update total supply and tx count
-      else if (topic0 === gPool.events.Burn.topic) {
-        const { sender, amount0, amount1, lpTokens } = gPool.events.Burn.decode(log);
-        
-        pool.totalSupply -= lpTokens;
-        pool.txCount++;
-        pool.updatedAt = new Date(block.header.timestamp);
-
-        ctx.log.debug(`Burn: ${pool.address} - LP: ${lpTokens}`);
+        const factory = await getFactory(FACTORY_ADDRESS)
+        factory.totalVolumeUSD += amountIn
+        factory.totalFeesUSD += (amountIn * 30n) / 10000n
+      } else if (topic0 === gPool.events.Mint.topic) {
+        const { lpTokens } = gPool.events.Mint.decode(log)
+        pool.totalSupply += lpTokens
+        pool.txCount++
+        pool.updatedAt = new Date(block.header.timestamp)
+      } else if (topic0 === gPool.events.Burn.topic) {
+        const { lpTokens } = gPool.events.Burn.decode(log)
+        pool.totalSupply -= lpTokens
+        pool.txCount++
+        pool.updatedAt = new Date(block.header.timestamp)
       }
     }
   }
 
-  // Save all entities (no historical events to insert)
-  await ctx.store.save([...factories.values()]);
-  await ctx.store.save([...tokens.values()]);
-  await ctx.store.save([...pools.values()]);
+  // Persist all updated entities
+  await ctx.store.save([...factories.values()])
+  await ctx.store.save([...tokens.values()])
+  await ctx.store.save([...pools.values()])
 
-  ctx.log.info(`Processed ${ctx.blocks.length} blocks, ${pools.size} pools updated`);
-});
+  if (ctx.blocks.length > 0) {
+    const lastBlock = ctx.blocks[ctx.blocks.length - 1].header.height
+    ctx.log.info(`Batch done — blocks up to #${lastBlock}, ${pools.size} pools touched`)
+  }
+})

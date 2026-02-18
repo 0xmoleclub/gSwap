@@ -4,7 +4,7 @@
 import { ApolloServer } from '@apollo/server';
 import { startStandaloneServer } from '@apollo/server/standalone';
 import { DataSource } from 'typeorm';
-import { Pool, Token } from '../model/index.js';
+import { Pool, Token } from '../model';
 
 const typeDefs = `#graphql
   type Token {

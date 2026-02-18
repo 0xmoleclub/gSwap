@@ -58,7 +58,7 @@ export function DetailsPanel({ isOpen, selectedNode, pools, onClose, children }:
           </h2>
           <div className="flex items-center justify-center gap-2">
             <span className="px-2 py-0.5 rounded bg-white/10 text-[10px] font-mono tracking-wider text-gray-300">
-              {selectedNode.id}
+              {selectedNode.symbol || selectedNode.id}
             </span>
           </div>
         </div>
@@ -85,14 +85,17 @@ export function DetailsPanel({ isOpen, selectedNode, pools, onClose, children }:
           </h3>
           <div className="overflow-y-auto pr-2 space-y-2 -mr-2">
             {connectedPools.map((pool, idx) => {
-              const partner = pool.source === selectedNode.id ? pool.target : pool.source;
+              const isSource = pool.source === selectedNode.id;
+              const partner = isSource
+                ? (pool.targetLabel || pool.target)
+                : (pool.sourceLabel || pool.source);
               return (
                 <div
                   key={idx}
                   className="flex justify-between p-3 bg-white/5 rounded-lg border border-white/5"
                 >
                   <span className="text-xs font-bold">{partner}</span>
-                  <span className="text-xs text-polkadot-pink font-mono">{pool.apy}% APY</span>
+                  <span className="text-xs text-polkadot-pink font-mono">{pool.apy}% Fee</span>
                 </div>
               );
             })}

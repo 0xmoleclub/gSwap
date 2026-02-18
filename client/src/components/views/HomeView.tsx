@@ -1,4 +1,4 @@
-import { Token, Pool } from '@/types/token';
+import { Token, Pool, IndexerStats } from '@/types/token';
 import { HUD } from '@/components/HUD';
 import { DetailsPanel } from '@/components/DetailsPanel';
 import { ControlsHint } from '@/components/ControlsHint';
@@ -8,13 +8,14 @@ interface HomeViewProps {
   selectedNode: Token | null;
   isPanelOpen: boolean;
   pools: Pool[];
+  stats?: IndexerStats;
   onClosePanel: () => void;
 }
 
-export function HomeView({ selectedNode, isPanelOpen, pools, onClosePanel }: HomeViewProps) {
+export function HomeView({ selectedNode, isPanelOpen, pools, stats, onClosePanel }: HomeViewProps) {
   return (
     <>
-      <HUD />
+      <HUD stats={stats} />
       <DetailsPanel
         isOpen={isPanelOpen}
         selectedNode={selectedNode}
