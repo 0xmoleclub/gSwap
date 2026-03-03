@@ -215,11 +215,23 @@ contract DeployGSwap is Script {
             if (decimals0 == 8) amount0 = 100_000_000 * 10**8; // WBTC special
             if (decimals1 == 8) amount1 = 100_000_000 * 10**8;
             
+            // Approve tokens for the pool
             token0.approve(address(pool), amount0);
             token1.approve(address(pool), amount1);
             
-            console.log(string.concat("  Pool ", vm.toString(i + 1), ": ", token0.symbol(), "/", token1.symbol()));
+            // Add liquidity to the pool
+            pool.addLiquidity(amount0, amount1);
+            
+            // Verify liquidity was added
+            (uint256 reserve0, uint256 reserve1, ) = pool.getReserves();
+            require(reserve0 > 0 && reserve1 > 0, "Liquidity not added");
+            
+            console.log(string.concat("  Pool ", vm.toString(i + 1), ": ", token0.symbol(), "/", token1.symbol(),
+                " - Reserves: ", vm.toString(reserve0), "/", vm.toString(reserve1)));
         }
+        
+        console.log("");
+        console.log(string.concat("Liquidity added to ", vm.toString(poolCount), " pools"));
         
         vm.stopBroadcast();
         
