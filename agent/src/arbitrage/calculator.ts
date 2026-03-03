@@ -3,8 +3,7 @@
  * Finds and evaluates arbitrage opportunities in the DEX graph
  */
 
-import { SubsquidClient, Pool } from '../graphql/client.js';
-import { getTokenByAddress } from '../data/mockData.js';
+import { SubsquidClient, Pool, Token } from '../graphql/client.js';
 
 export interface ArbitrageOpportunity {
   id: string;
@@ -48,10 +47,22 @@ const DEFAULT_CONFIG: CalculatorConfig = {
 export class ArbitrageCalculator {
   private client: SubsquidClient;
   private config: CalculatorConfig;
+  private tokenCache: Map<string, Token> = new Map();
 
   constructor(client: SubsquidClient, config: Partial<CalculatorConfig> = {}) {
     this.client = client;
     this.config = { ...DEFAULT_CONFIG, ...config };
+  }
+
+  private async getTokenByAddress(address: string): Promise<Token | null> {
+    const key = address.toLowerCase();
+    if (this.tokenCache.has(key)) return this.tokenCache.get(key)!;
+    // Populate cache from all tokens on first miss
+    if (this.tokenCache.size === 0) {
+      const tokens = await this.client.getAllTokens();
+      for (const t of tokens) this.tokenCache.set(t.address.toLowerCase(), t);
+    }
+    return this.tokenCache.get(key) ?? null;
   }
 
   /**
@@ -102,13 +113,15 @@ export class ArbitrageCalculator {
     }
     
     // Get token symbols for readable route
-    const routeSymbols = route.map(addr => {
-      const token = getTokenByAddress(addr);
-      return token?.symbol || addr.slice(0, 8);
-    });
-    
+    const routeSymbols = await Promise.all(
+      route.map(async (addr) => {
+        const token = await this.getTokenByAddress(addr);
+        return token?.symbol || addr.slice(0, 8);
+      })
+    );
+
     // Calculate USD values
-    const startToken = getTokenByAddress(route[0]);
+    const startToken = await this.getTokenByAddress(route[0]);
     const amountInNum = Number(amountIn) / 10 ** (startToken?.decimals || 18);
     const profitNum = Number(result.profit) / 10 ** (startToken?.decimals || 18);
     

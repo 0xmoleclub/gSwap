@@ -16,14 +16,13 @@ const rootDir = resolve(__dirname, '..', '..');
 config({ path: resolve(rootDir, '.env') });
 
 console.log('📁 Loaded environment from:', resolve(rootDir, '.env'));
-import { startMockGraphQLServer } from './graphql/mockServer.js';
 
 // Parse command line arguments
 function parseArgs(): { command: string; options: Record<string, string> } {
   const args = process.argv.slice(2);
   const command = args[0] || 'help';
   const options: Record<string, string> = {};
-  
+
   for (let i = 1; i < args.length; i++) {
     const arg = args[i];
     if (arg.startsWith('--')) {
@@ -40,7 +39,7 @@ function parseArgs(): { command: string; options: Record<string, string> } {
       }
     }
   }
-  
+
   return { command, options };
 }
 
@@ -52,9 +51,8 @@ function showHelp(): void {
 Usage: node dist/index.js <command> [options]
 
 Commands:
-  start              Start the arbitrage agent (production)
+  start              Start the arbitrage agent (continuous polling)
   scan               Run a single scan for opportunities
-  mock               Start mock GraphQL server + run scan with LLM analysis
   analyze            Get market analysis from LLM
   status             Show agent status
   help               Show this help message
@@ -73,23 +71,26 @@ Environment Variables:
   PRIVATE_KEY          Wallet private key (production)
 
 Examples:
-  # Mock data + free LLM analysis (may be rate limited)
-  node dist/index.js mock
+  # Single scan against local Apollo server
+  node dist/index.js scan
 
-  # With custom API key
-  node dist/index.js mock --key="sk-or-v1-..."
+  # With custom endpoint
+  node dist/index.js scan --endpoint=http://localhost:4000
 
-  # Production
-  node dist/index.js start --endpoint=https://real-indexer.com
+  # Continuous polling
+  node dist/index.js start --endpoint=http://localhost:4000
+
+  # LLM market analysis
+  node dist/index.js analyze --key="sk-or-v1-..."
   `);
 }
 
 // Main function
 async function main(): Promise<void> {
   const { command, options } = parseArgs();
-  
+
   // Load config from environment and CLI options
-  const config: Partial<AgentConfig> = {
+  const agentConfig: Partial<AgentConfig> = {
     graphqlEndpoint: options.endpoint || process.env.GRAPHQL_ENDPOINT || 'http://localhost:4000/graphql',
     minProfitPercent: parseFloat(options.profit || '0.1'),
     maxHops: parseInt(options.hops || '4'),
@@ -97,128 +98,59 @@ async function main(): Promise<void> {
     llmModel: process.env.OPENROUTER_MODEL || 'qwen/qwen3-coder:free',
     autoExecute: options.auto === 'true' || false,
   };
-  
+
   // Check for OpenRouter API key
-  if (!config.llmApiKey) {
+  if (!agentConfig.llmApiKey) {
     console.log('\n⚠️  WARNING: No OPENROUTER_API_KEY found in .env');
     console.log('   Set it to use LLM analysis.\n');
   }
-  
+
   switch (command) {
     case 'start': {
       console.log('\n🚀 Starting gSwap Arbitrage Agent...\n');
-      
-      // Start mock server if requested
-      let mockServer: any;
-      if (options.mock) {
-        console.log('📡 Starting mock GraphQL server...');
-        mockServer = await startMockGraphQLServer(4000);
-        config.graphqlEndpoint = mockServer.url + '/graphql';
-      }
-      
-      const agent = new ArbitrageAgent(config);
+
+      const agent = new ArbitrageAgent(agentConfig);
       await agent.start();
-      
+
       // Handle graceful shutdown
       process.on('SIGINT', () => {
         console.log('\n\n👋 Shutting down...');
         agent.stop();
-        mockServer?.server?.stop?.();
         process.exit(0);
       });
-      
+
       // Keep running
       await new Promise(() => {});
       break;
     }
-    
+
     case 'scan': {
       console.log('\n🔍 Running single scan...\n');
-      
-      // Start mock server if requested
-      let mockServer: any;
-      if (options.mock) {
-        console.log('📡 Starting mock GraphQL server...');
-        mockServer = await startMockGraphQLServer(4000);
-        config.graphqlEndpoint = mockServer.url + '/graphql';
-      }
-      
-      const agent = new ArbitrageAgent(config);
+
+      const agent = new ArbitrageAgent(agentConfig);
       await agent.scan();
-      
-      mockServer?.server?.stop?.();
+
       process.exit(0);
       break;
     }
-    
-    case 'mock': {
-      console.log('\n📡 Starting mock GraphQL server...');
-      console.log('   The server will run with mock data for testing.\n');
-      
-      // Try ports 4000-4005
-      let url: string;
-      let port = 4000;
-      
-      for (port = 4000; port <= 4005; port++) {
-        try {
-          const result = await startMockGraphQLServer(port);
-          url = result.url;
-          break;
-        } catch (err: any) {
-          if (err.code === 'EADDRINUSE') {
-            console.log(`   Port ${port} in use, trying ${port + 1}...`);
-            continue;
-          }
-          throw err;
-        }
-      }
-      
-      if (!url!) {
-        console.error('❌ Could not find available port (tried 4000-4005)');
-        process.exit(1);
-      }
-      
-      console.log('\n✅ Mock server is running!');
-      console.log(`   URL: ${url}`);
-      console.log('\nYou can now test with:');
-      console.log(`  curl ${url} -X POST -H "Content-Type: application/json" \\\n    -d '{"query": "{ pools { address token0 { symbol } token1 { symbol } } }"}'`);
-      console.log('\nPress Ctrl+C to stop');
-      
-      // Run a demo scan
-      console.log('\n\n🧪 Running demo scan...\n');
-      config.graphqlEndpoint = url + '/graphql';
-      const agent = new ArbitrageAgent(config);
-      await agent.scan();
-      
-      // Keep server running
-      await new Promise(() => {});
-      break;
-    }
-    
+
     case 'analyze': {
       console.log('\n📊 Getting market analysis...\n');
-      
-      let mockServer: any;
-      if (options.mock) {
-        mockServer = await startMockGraphQLServer(4000);
-        config.graphqlEndpoint = mockServer.url + '/graphql';
-      }
-      
-      const agent = new ArbitrageAgent(config);
+
+      const agent = new ArbitrageAgent(agentConfig);
       await agent.analyzeMarket();
-      
-      mockServer?.server?.stop?.();
+
       process.exit(0);
       break;
     }
-    
+
     case 'status': {
       console.log('\nℹ️  To get status, the agent must be running.\n');
       console.log('Use: node dist/index.js start');
       process.exit(0);
       break;
     }
-    
+
     case 'help':
     default:
       showHelp();

@@ -9,7 +9,7 @@ import { config } from 'dotenv';
 
 config({ path: process.env.DOTENV_CONFIG_PATH || '../.env' });
 
-const FACTORY = '0x02065b6786f0198686d31b646e75330e9829750c';
+const FACTORY = (process.env.FACTORY_ADDRESS || '0x90959F9Bf93EBE320d8aF0304Fd6aE87F0C7fD7c').toLowerCase();
 const BLOCKSCOUT = 'https://blockscout-testnet.polkadot.io';
 const RPC_URL = process.env.RPC_ENDPOINT || 'https://services.polkadothub-rpc.com/testnet';
 
@@ -90,7 +90,7 @@ async function main() {
     host: process.env.DB_HOST || 'localhost',
     port: parseInt(process.env.DB_PORT || '5432'),
     user: process.env.DB_USER || 'postgres',
-    password: process.env.DB_PASS || '',
+    password: process.env.DB_PASS ?? 'postgres',
     database: process.env.DB_NAME || 'gswap',
   });
 
