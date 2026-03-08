@@ -55,16 +55,19 @@ export function WalletSelectModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+      <div className="absolute inset-0 bg-[#030014]/80 backdrop-blur-md" />
       <div
-        className="relative w-full max-w-sm rounded-2xl bg-[#0a0a0a] border border-white/10 shadow-2xl overflow-hidden"
+        className="relative w-full max-w-sm rounded-2xl bg-[#0B0720] border border-white/[0.08] shadow-[0_30px_80px_rgba(0,0,0,0.8)] overflow-hidden animate-scaleIn"
         onClick={(e) => e.stopPropagation()}
       >
+        {/* Top accent */}
+        <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-nebula-purple/40 via-transparent to-nebula-blue/20"></div>
+
         {/* Header */}
-        <div className="flex justify-between items-center p-4 border-b border-white/5">
-          <h3 className="font-display font-bold text-lg text-white">Connect Wallet</h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-white transition">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div className="flex justify-between items-center p-5 border-b border-white/[0.04]">
+          <h3 className="font-display font-bold text-base text-white">Connect Wallet</h3>
+          <button onClick={onClose} className="text-gray-500 hover:text-white transition-colors p-1 rounded-lg hover:bg-white/[0.05]">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
@@ -72,42 +75,46 @@ export function WalletSelectModal({
 
         {/* Error banner */}
         {error && (
-          <div className="mx-4 mt-3 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/20">
-            <p className="text-xs text-red-400 break-words">{error}</p>
+          <div className="mx-4 mt-3 px-3 py-2.5 rounded-xl bg-red-500/5 border border-red-500/15">
+            <p className="text-[11px] text-red-400 break-words font-body">{error}</p>
           </div>
         )}
 
         {/* Detected Wallets */}
         {discoveredWallets.length > 0 && (
           <div className="px-4 pt-4 pb-1">
-            <p className="text-[10px] text-gray-400 uppercase tracking-wider mb-2">Detected Wallets</p>
+            <p className="text-[9px] text-gray-500 uppercase tracking-[0.2em] mb-2.5 font-data">Detected</p>
             <div className="space-y-1">
-              {discoveredWallets.map((detail) => {
+              {discoveredWallets.map((detail, idx) => {
                 const isConnecting = connectingWalletId === detail.info.rdns;
                 return (
                   <button
                     key={detail.info.rdns}
                     onClick={() => onSelect(detail)}
                     disabled={connectingWalletId !== null}
-                    className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-white/5 transition text-left disabled:opacity-50"
+                    className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-white/[0.03] transition-all duration-200 text-left disabled:opacity-50 group animate-fadeIn"
+                    style={{ animationDelay: `${idx * 40}ms` }}
                   >
-                    {/* Wallet icon */}
                     {detail.info.icon ? (
                       <img
                         src={detail.info.icon}
                         alt={detail.info.name}
-                        className="w-8 h-8 rounded-lg"
+                        className="w-9 h-9 rounded-xl"
                       />
                     ) : (
-                      <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center text-xs font-bold">
+                      <div className="w-9 h-9 rounded-xl bg-white/[0.04] border border-white/[0.06] flex items-center justify-center text-xs font-display font-bold">
                         {detail.info.name[0]}
                       </div>
                     )}
-                    <span className="flex-1 font-bold text-sm text-white">{detail.info.name}</span>
+                    <span className="flex-1 font-body font-semibold text-sm text-white/80 group-hover:text-white transition-colors">{detail.info.name}</span>
                     {isConnecting ? (
-                      <div className="w-5 h-5 border-2 border-polkadot-pink/30 border-t-polkadot-pink rounded-full animate-spin" />
+                      <div className="w-5 h-5 rounded-full animate-spin" style={{
+                        background: 'conic-gradient(from 0deg, transparent 0deg, #7B2FBE 120deg, #00F0FF 240deg, transparent 360deg)',
+                        mask: 'radial-gradient(farthest-side, transparent calc(100% - 2px), white calc(100% - 2px))',
+                        WebkitMask: 'radial-gradient(farthest-side, transparent calc(100% - 2px), white calc(100% - 2px))',
+                      }} />
                     ) : (
-                      <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg className="w-4 h-4 text-gray-600 group-hover:text-gray-400 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
                       </svg>
                     )}
@@ -118,38 +125,37 @@ export function WalletSelectModal({
           </div>
         )}
 
-        {/* No wallets detected but window.ethereum exists — legacy fallback shown in context */}
-
         {/* Popular Wallets (not installed) */}
         {popularNotInstalled.length > 0 && (
           <div className="px-4 pt-3 pb-4">
-            <p className="text-[10px] text-gray-400 uppercase tracking-wider mb-2">Popular Wallets</p>
+            <p className="text-[9px] text-gray-500 uppercase tracking-[0.2em] mb-2.5 font-data">Popular Wallets</p>
             <div className="space-y-1">
-              {popularNotInstalled.map((wallet) => (
+              {popularNotInstalled.map((wallet, idx) => (
                 <a
                   key={wallet.rdns}
                   href={wallet.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-white/5 transition text-left opacity-60 hover:opacity-80"
+                  className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-white/[0.03] transition-all duration-200 text-left opacity-50 hover:opacity-70 group animate-fadeIn"
+                  style={{ animationDelay: `${(idx + discoveredWallets.length) * 40}ms` }}
                 >
                   <div
-                    className="w-8 h-8 rounded-lg overflow-hidden flex items-center justify-center"
+                    className="w-9 h-9 rounded-xl overflow-hidden flex items-center justify-center"
                     dangerouslySetInnerHTML={{ __html: wallet.icon }}
                   />
-                  <span className="flex-1 text-sm text-gray-300">{wallet.name}</span>
-                  <span className="text-[10px] text-polkadot-pink font-bold uppercase tracking-wider">Install</span>
+                  <span className="flex-1 text-sm text-gray-400 font-body">{wallet.name}</span>
+                  <span className="text-[9px] text-nebula-purple font-data font-medium uppercase tracking-wider">Install</span>
                 </a>
               ))}
             </div>
           </div>
         )}
 
-        {/* Empty state: no wallets at all */}
+        {/* Empty state */}
         {discoveredWallets.length === 0 && popularNotInstalled.length === POPULAR_WALLETS.length && (
-          <div className="px-4 py-6 text-center">
-            <p className="text-sm text-gray-300">No wallets detected</p>
-            <p className="text-xs text-gray-400 mt-1">Install a wallet to get started</p>
+          <div className="px-4 py-8 text-center">
+            <p className="text-sm text-gray-400 font-body">No wallets detected</p>
+            <p className="text-[11px] text-gray-600 mt-1 font-data">Install a wallet to get started</p>
           </div>
         )}
       </div>

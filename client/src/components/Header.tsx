@@ -4,13 +4,13 @@ import Link from 'next/link';
 import { useState, useRef, useEffect } from 'react';
 import { useWallet } from '@/context/WalletContext';
 import { shortenAddress } from '@/lib/format';
+import { NetworkBadge } from './NetworkBadge';
 
 export function Header() {
   const { address, isConnecting, isCorrectChain, connect, disconnect, switchChain } = useWallet();
   const [showDropdown, setShowDropdown] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Close dropdown on outside click
   useEffect(() => {
     function handleClick(e: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
@@ -22,78 +22,82 @@ export function Header() {
   }, [showDropdown]);
 
   return (
-    <header className="flex justify-between items-center pointer-events-auto">
-      <Link href="/" className="flex items-center gap-3 cursor-pointer">
-        <div className="relative w-12 h-12 flex items-center justify-center group">
-          <div className="absolute inset-0 bg-polkadot-pink rounded-full opacity-20 animate-pulse group-hover:opacity-40 transition-opacity"></div>
-          <div className="relative w-10 h-10 rounded-full bg-black flex items-center justify-center shadow-[0_0_25px_#E6007A] border border-polkadot-pink/30 group-hover:border-polkadot-pink transition-colors">
-            <span className="font-display font-bold text-white text-xl pb-1">g</span>
-            <div className="absolute top-0 right-0 w-2 h-2 bg-green-400 rounded-full border border-black"></div>
-          </div>
-        </div>
-        <div>
-          <h1 className="font-display font-bold text-2xl tracking-tight leading-none">
-            g<span className="text-polkadot-pink">Swap</span>
-          </h1>
-          <p className="text-[10px] text-gray-400 font-sans tracking-[0.2em] uppercase">
-            Universal Liquidity
-          </p>
-        </div>
-      </Link>
-
-      {/* Wallet Button */}
-      {!address ? (
-        <button
-          onClick={connect}
-          disabled={isConnecting}
-          className="group relative px-6 py-2 rounded-full bg-black/50 border border-white/10 hover:border-polkadot-pink transition-colors overflow-hidden disabled:opacity-50"
-        >
-          <div className="absolute inset-0 bg-polkadot-pink/10 translate-y-full group-hover:translate-y-0 transition-transform"></div>
-          <span className="relative font-display font-bold text-sm text-white group-hover:text-polkadot-pink transition-colors">
-            {isConnecting ? 'Connecting...' : 'Connect Wallet'}
-          </span>
-        </button>
-      ) : !isCorrectChain ? (
-        <button
-          onClick={switchChain}
-          className="group relative px-6 py-2 rounded-full bg-black/50 border border-orange-500/50 hover:border-orange-400 transition-colors overflow-hidden"
-        >
-          <div className="absolute inset-0 bg-orange-500/10 translate-y-full group-hover:translate-y-0 transition-transform"></div>
-          <span className="relative font-display font-bold text-sm text-orange-400">
-            Switch Network
-          </span>
-        </button>
-      ) : (
-        <div className="relative" ref={dropdownRef}>
-          <button
-            onClick={() => setShowDropdown((v) => !v)}
-            className="group relative flex items-center gap-2 px-4 py-2 rounded-full bg-black/50 border border-white/10 hover:border-polkadot-pink/50 transition-colors"
-          >
-            <div className="w-2 h-2 rounded-full bg-green-400"></div>
-            <span className="font-mono text-sm text-white">
-              {shortenAddress(address)}
-            </span>
-            <svg className={`w-3 h-3 text-gray-400 transition-transform ${showDropdown ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
-            </svg>
-          </button>
-
-          {showDropdown && (
-            <div className="absolute right-0 mt-2 w-48 py-2 rounded-xl bg-black/90 backdrop-blur-xl border border-white/10 shadow-2xl">
-              <div className="px-4 py-2 border-b border-white/5">
-                <p className="text-[10px] text-gray-500 uppercase tracking-wider">Connected</p>
-                <p className="text-xs text-white font-mono truncate">{address}</p>
-              </div>
-              <button
-                onClick={() => { disconnect(); setShowDropdown(false); }}
-                className="w-full px-4 py-2 text-left text-sm text-red-400 hover:bg-white/5 transition-colors"
-              >
-                Disconnect
-              </button>
+    <header className="flex justify-between items-center pointer-events-auto animate-fadeIn">
+      <div className="flex items-center gap-4">
+        <Link href="/" className="flex items-center gap-3 cursor-pointer group">
+          {/* Logo */}
+          <div className="relative w-10 h-10 flex items-center justify-center">
+            <div className="absolute inset-0 rounded-xl bg-nebula-purple/20 group-hover:bg-nebula-purple/30 transition-all duration-500 blur-md"></div>
+            <div className="relative w-10 h-10 rounded-xl bg-gradient-to-br from-nebula-purple/30 to-nebula-blue/20 flex items-center justify-center border border-nebula-purple/30 group-hover:border-nebula-purple/50 transition-all duration-300 shadow-[0_0_20px_rgba(123,47,190,0.2)]">
+              <span className="font-display font-black text-white text-lg leading-none">g</span>
             </div>
-          )}
-        </div>
-      )}
+            <div className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-aurora-green rounded-full border-2 border-void shadow-[0_0_8px_rgba(0,255,136,0.5)]"></div>
+          </div>
+
+          <div>
+            <h1 className="font-display font-black text-xl tracking-tight leading-none">
+              g<span className="text-nebula-purple">Swap</span>
+            </h1>
+            <p className="text-[9px] text-white/30 font-data tracking-[0.25em] uppercase mt-0.5">
+              Polkadot Hub
+            </p>
+          </div>
+        </Link>
+
+        <NetworkBadge />
+      </div>
+
+      {/* Wallet */}
+      <div className="flex items-center gap-3">
+        {!address ? (
+          <button
+            onClick={connect}
+            disabled={isConnecting}
+            className="group relative px-5 py-2.5 rounded-xl btn-galaxy text-white font-display font-bold text-xs tracking-wide overflow-hidden disabled:opacity-50 btn-press"
+          >
+            {isConnecting ? 'Connecting...' : 'Connect Wallet'}
+          </button>
+        ) : !isCorrectChain ? (
+          <button
+            onClick={switchChain}
+            className="px-5 py-2.5 rounded-xl bg-stellar-gold/10 border border-stellar-gold/30 hover:border-stellar-gold/60 transition-all duration-300 btn-press"
+          >
+            <span className="font-display font-bold text-xs text-stellar-gold tracking-wide">
+              Switch Network
+            </span>
+          </button>
+        ) : (
+          <div className="relative" ref={dropdownRef}>
+            <button
+              onClick={() => setShowDropdown((v) => !v)}
+              className="group flex items-center gap-2.5 px-4 py-2.5 rounded-xl bg-white/[0.03] border border-nebula-purple/15 hover:border-nebula-purple/30 transition-all duration-300"
+            >
+              <div className="w-2 h-2 rounded-full bg-aurora-green shadow-[0_0_6px_rgba(0,255,136,0.5)]"></div>
+              <span className="font-data text-xs text-white/80">
+                {shortenAddress(address)}
+              </span>
+              <svg className={`w-3 h-3 text-white/30 transition-transform duration-200 ${showDropdown ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+
+            {showDropdown && (
+              <div className="absolute right-0 mt-2 w-52 rounded-xl bg-deep border border-nebula-purple/15 shadow-[0_20px_60px_rgba(0,0,0,0.8)] animate-scaleIn overflow-hidden">
+                <div className="px-4 py-3 border-b border-white/[0.04]">
+                  <p className="text-[9px] text-white/30 uppercase tracking-wider font-data">Connected</p>
+                  <p className="text-[11px] text-white/60 font-data truncate mt-1">{address}</p>
+                </div>
+                <button
+                  onClick={() => { disconnect(); setShowDropdown(false); }}
+                  className="w-full px-4 py-3 text-left text-xs text-red-400 hover:bg-red-500/5 transition-colors font-body font-semibold"
+                >
+                  Disconnect
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </header>
   );
 }

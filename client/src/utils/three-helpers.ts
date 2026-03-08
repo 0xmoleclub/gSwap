@@ -8,7 +8,7 @@ export function createLabel(text: string, isBold: boolean, size: number): THREE.
   canvas.width = 256;
   canvas.height = 128;
   
-  ctx.font = `${isBold ? '900' : '600'} ${size}px "Inter", sans-serif`;
+  ctx.font = `${isBold ? '900' : '600'} ${size}px "Outfit", "Unbounded", sans-serif`;
   ctx.fillStyle = 'white';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';

@@ -72,22 +72,32 @@ interface QueryResult {
 // Helpers
 // ------------------------------------------------------------------
 
-/** Deterministic color from an Ethereum address. */
+/** Deterministic galaxy-palette color from an Ethereum address. */
 function addressToColor(address: string): number {
-  const hex = address.slice(2, 8); // first 3 bytes after 0x
-  let r = parseInt(hex.slice(0, 2), 16);
-  let g = parseInt(hex.slice(2, 4), 16);
-  let b = parseInt(hex.slice(4, 6), 16);
+  // Galaxy-inspired palette: purples, blues, cyans, greens, golds, pinks
+  const galaxyPalette = [
+    0x9D6BFF, // lavender purple
+    0x4D8BFF, // bright blue
+    0x00D4FF, // cyan
+    0x00FF88, // aurora green
+    0xFF6B9D, // soft pink
+    0xFFB800, // stellar gold
+    0x7B68EE, // medium slate blue
+    0x20B2AA, // light sea green
+    0xFF7F50, // coral
+    0xBA55D3, // medium orchid
+    0x87CEEB, // sky blue
+    0x98FB98, // pale green
+    0xDDA0DD, // plum
+    0xF0E68C, // khaki gold
+    0x6A5ACD, // slate blue
+    0x48D1CC, // medium turquoise
+  ];
 
-  // Ensure minimum brightness so nodes are visible on black background
-  const brightness = (r + g + b) / 3;
-  if (brightness < 100) {
-    r = Math.min(r + 100, 255);
-    g = Math.min(g + 100, 255);
-    b = Math.min(b + 100, 255);
-  }
-
-  return (r << 16) | (g << 8) | b;
+  // Use address bytes to deterministically pick from palette
+  const byte1 = parseInt(address.slice(2, 4), 16);
+  const index = byte1 % galaxyPalette.length;
+  return galaxyPalette[index];
 }
 
 /** Short display name for a token. */
@@ -161,7 +171,7 @@ function transformData(
     name: t.name || t.symbol || `${t.address.slice(0, 6)}..${t.address.slice(-4)}`,
     symbol: t.symbol || undefined,
     color:
-      t.id === centralToken.id ? 0xe6007a : addressToColor(t.address),
+      t.id === centralToken.id ? 0x7B2FBE : addressToColor(t.address),
     price: computeTokenPrice(t, indexerPools),
     tvl: computeTokenTVL(t, indexerPools),
     address: t.address,

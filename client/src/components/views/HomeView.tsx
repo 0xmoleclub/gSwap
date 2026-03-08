@@ -22,16 +22,16 @@ export function HomeView({ selectedNode, isPanelOpen, pools, stats, onClosePanel
         pools={pools}
         onClose={onClosePanel}
       >
-        <div className="mt-6 pt-6 border-t border-white/10 grid grid-cols-2 gap-3 relative z-10">
+        <div className="mt-6 pt-6 border-t border-nebula-purple/10 grid grid-cols-2 gap-3 relative z-10 animate-fadeInUp stagger-4">
           <Link
             href="/swap"
-            className="py-4 rounded-2xl bg-polkadot-pink hover:bg-pink-600 text-white font-bold font-display text-sm transition shadow-[0_0_20px_rgba(230,0,122,0.4)] text-center"
+            className="py-3.5 rounded-xl btn-galaxy text-white font-display font-bold text-sm text-center btn-press"
           >
             Swap
           </Link>
           <Link
             href="/liquidity"
-            className="py-4 rounded-2xl bg-white text-black hover:bg-gray-200 font-bold font-display text-sm transition text-center"
+            className="py-3.5 rounded-xl bg-white/[0.03] border border-nebula-purple/15 hover:border-nebula-blue/30 text-white font-display font-bold text-sm transition-all duration-300 text-center hover:bg-white/[0.05] btn-press"
           >
             Pool
           </Link>

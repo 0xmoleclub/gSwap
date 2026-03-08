@@ -44,3 +44,6 @@ subsquid/db/migrations/*.d.ts
 
 # Mac
 .DS_Store
+
+.agents/
+.claude/
