@@ -11,22 +11,22 @@ import {MockERC20} from "../src/MockERC20.sol";
  */
 contract MintTokens is Script {
     
-    // Token addresses from latest deployment (run-latest.json)
-    address constant USDC = 0xc394f94c7b93ae269f7aabdeca736a7b7768a388;
-    address constant USDT = 0x375b3ee0cfc16fad04b2b8df2fa48c3565320a5b;
-    address constant DAI = 0xd949eb9f942966c6f390bb07c56321bd516ad70b;
-    address constant WETH = 0x8e86b14abc9e8f56c21a8ee26e8253b5658a9c7d;
-    address constant WBTC = 0xd99aaecb8030b713f35065c1ef11a1e038620a41;
-    address constant LINK = 0xfa27886c7395e48d4dad4f5f50b7bbbcbca85d93;
-    address constant UNI = 0x91d70e24969efa48fd8c6878c817e3d96ba5f360;
-    address constant AAVE = 0x14a8ea0630114b68fc3975299a8f41067c798aed;
-    address constant COMP = 0xa85d8219db815e5285605935c7863fdc3e1dc3c8;
-    address constant MKR = 0x38b29434dda8bace3d7239bd7fed37d8f45d1475;
-    address constant SHIB = 0x630ebd205b5a5c10145a044f89acfd04e0286e69;
-    address constant PEPE = 0xc81316ee60d28f9602f4bff4a809520d4865cdc1;
-    address constant SUSHI = 0x93bcd3e0710d20e2c1a106acecfefbd4ee1bc9f8;
-    address constant CRV = 0x04d96680693a273f370b631dcc5dec6f6f9041bb;
-    address constant LDO = 0x44e0eab8683667dda8dc7eaeecf9ce351aa8704e;
+    // Token addresses from latest deployment (run-latest.json) - with proper checksums
+    address constant USDC = 0xc394f94c7B93AE269F7AABDeca736A7b7768a388;
+    address constant USDT = 0x375b3Ee0CfC16FaD04b2b8DF2fa48C3565320A5B;
+    address constant DAI = 0xD949EB9F942966C6F390bb07c56321BD516aD70b;
+    address constant WETH = 0x8e86B14Abc9e8F56C21A8eE26e8253b5658a9C7d;
+    address constant WBTC = 0xd99AaeCB8030B713F35065c1ef11a1e038620A41;
+    address constant LINK = 0xfA27886C7395e48d4dAD4f5f50B7bBbcbCA85d93;
+    address constant UNI = 0x91D70E24969efa48fd8C6878c817e3D96bA5f360;
+    address constant AAVE = 0x14a8Ea0630114b68Fc3975299A8f41067c798Aed;
+    address constant COMP = 0xa85D8219Db815e5285605935c7863FdC3E1Dc3C8;
+    address constant MKR = 0x38B29434dda8BaCe3d7239bD7FEd37d8f45d1475;
+    address constant SHIB = 0x630ebd205b5A5c10145a044f89ACfd04E0286E69;
+    address constant PEPE = 0xC81316ee60D28f9602F4bFF4a809520D4865CDC1;
+    address constant SUSHI = 0x93bCD3E0710d20E2c1a106aCecfEfbd4ee1bc9f8;
+    address constant CRV = 0x04d96680693a273f370b631DCC5Dec6f6F9041bB;
+    address constant LDO = 0x44E0eAb8683667dDa8DC7eaEEcf9ce351aa8704e;
 
     // Mint amounts for each token type
     uint256 constant MINT_AMOUNT_STABLE = 10_000_000 * 10**6;    // 10M USDC/USDT (6 decimals)
