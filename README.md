@@ -1,72 +1,102 @@
 # gSwap
 
-A decentralized exchange (DEX) on Polkadot Hub EVM with a 3D pool graph visualization, on-chain indexer, and arbitrage agent.
+A decentralized exchange (DEX) on Polkadot Hub EVM with 3D pool graph visualization, AI-powered arbitrage agent, platform token staking, and comprehensive DeFi features.
+
+## Features
+
+🌌 **3D Galaxy Visualization** — Interactive pool graph with Three.js  
+🤖 **AI Arbitrage Agent** — Real-time opportunity detection & execution  
+⬡ **GRS Platform Token** — Staking rewards, fee discounts & governance  
+🚰 **Token Faucet** — Free testnet tokens for demo users  
+📊 **Subsquid Indexer** — High-performance on-chain data indexing  
 
 ## Architecture
 
 ```
 gswap/
-├── client/          # Next.js frontend — 3D pool graph (Three.js)
+├── client/          # Next.js 16 frontend — 3D visualization, trading UI
 ├── subsquid/        # Subsquid indexer + Apollo GraphQL server
 ├── contracts/       # Solidity smart contracts (Foundry)
-├── agent/           # Arbitrage detection agent
+├── agent/           # AI arbitrage agent with real execution
 └── .env             # Shared environment variables
 ```
 
 **Data flow:**
 
 ```
-Polkadot Hub EVM → Subsquid Processor → PostgreSQL → Apollo GraphQL (4000) → Next.js Client (3000)
+Polkadot Hub EVM → Blockscout API → PostgreSQL → Apollo GraphQL (4000) → Next.js Client (3000)
+                             ↓
+                      Arbitrage Agent (Real Transactions)
 ```
 
-## Prerequisites
+## Deployed Contracts (Polkadot Hub Testnet)
+
+| Contract | Address | Purpose |
+|----------|---------|---------|
+| **gSwapFactory** | `0x90959F9Bf93EBE320d8aF0304Fd6aE87F0C7fD7c` | Pool factory & registry |
+| **GRS Token** | `0x9d1939134297c5fa44A793c3E618f8D7Ba793024` | Platform governance token |
+| **GRS Staking** | `0x5a36D068898e8db3D089727890f89ae60a4b8c78` | Staking & rewards |
+| **GRS/USDT Pool** | `0xc296599d2cc3D0BC7577Fd0f0AE8254519976A2c` | GRS liquidity pool |
+
+**Network:** Polkadot Hub EVM (Chain ID: 420420417)  
+**Explorer:** https://blockscout-passet-hub.parity-testchain.parity.io
+
+### Token Addresses
+
+| Token | Address | Decimals | Type |
+|-------|---------|----------|------|
+| USDT | `0x375b3Ee0CfC16FaD04b2b8DF2fa48C3565320A5B` | 6 | Hub |
+| USDC | `0xc394f94c7B93AE269F7AABDeca736A7b7768a388` | 6 | Hub |
+| DAI | `0xD949EB9F942966C6F390bb07c56321BD516aD70b` | 18 | Hub |
+| WETH | `0x8e86B14Abc9e8F56C21A8eE26e8253b5658a9C7d` | 18 | Hub |
+| WBTC | `0xd99AaeCB8030B713F35065c1ef11a1e038620A41` | 8 | Major |
+| GRS | `0x9d1939134297c5fa44A793c3E618f8D7Ba793024` | 18 | Platform |
+| + 9 more altcoins | See `client/src/config/tokens.ts` | | |
+
+**Total Pools:** 20 (Hub & Spoke topology)
+
+## Quick Start
+
+### Prerequisites
 
 - **Node.js** >= 20
 - **pnpm** >= 10
 - **PostgreSQL** 15+
-- **Foundry** (for contract development only)
+- **Foundry** (optional, for contract development)
 
-## Quick Start
-
-### 1. Environment Setup
+### 1. Clone & Setup
 
 ```bash
+git clone <repo-url>
+cd gswap
+
+# Copy environment file
 cp .env.example .env
-# Edit .env with your database credentials and API keys
+# Edit .env with your database credentials and private key
 ```
 
-Key variables:
-
-| Variable | Description | Default |
-|---|---|---|
-| `RPC_ENDPOINT` | Polkadot Hub EVM RPC | `https://services.polkadothub-rpc.com/testnet` |
-| `DB_NAME` | PostgreSQL database name | `gswap` |
-| `DB_PORT` | PostgreSQL port | `5432` |
-| `DB_HOST` | PostgreSQL host | `localhost` |
-| `DB_USER` | PostgreSQL user | `postgres` |
-| `DB_PASS` | PostgreSQL password | |
-| `FACTORY_ADDRESS` | gSwap factory contract | `0x02065b6786f0198686d31b646e75330e9829750c` |
-| `NEXT_PUBLIC_GRAPHQL_URL` | GraphQL endpoint for client | `http://localhost:4000` |
-
-### 2. Create Database
+### 2. Install Dependencies
 
 ```bash
-createdb gswap
-# or with psql:
-psql -U postgres -c "CREATE DATABASE gswap;"
-```
+# Root (agent dependencies)
+pnpm install
 
-### 3. Install Dependencies
-
-```bash
-# Indexer
+# Subsquid (indexer)
 cd subsquid && pnpm install
 
-# Client
+# Client (frontend)
 cd ../client && pnpm install
 ```
 
-### 4. Build and Migrate (Indexer)
+### 3. Start Database
+
+```bash
+cd subsquid
+docker compose up -d db
+# or use local PostgreSQL
+```
+
+### 4. Build & Seed
 
 ```bash
 cd subsquid
@@ -74,133 +104,258 @@ cd subsquid
 # Build TypeScript
 pnpm build
 
-# Apply database migrations
+# Apply migrations
 pnpm migration:apply
-```
 
-### 5. Seed Data from Blockscout
-
-> **Note:** `eth_getLogs` is currently broken on Polkadot Hub EVM (PolkaVM). The seed script fetches pool data directly from the Blockscout API instead.
-
-```bash
-cd subsquid
+# Seed from Blockscout (eth_getLogs workaround)
 DOTENV_CONFIG_PATH=../.env node scripts/seed-from-blockscout.mjs
 ```
 
-This will:
-- Fetch all `PoolCreated` events from the factory contract via Blockscout
-- Fetch ERC20 token metadata (symbol, name, decimals)
-- Fetch on-chain reserves via RPC `getReserves()` calls
-- Insert all tokens and pools into the database
-
-### 6. Start the Apollo GraphQL Server
+### 5. Start Services
 
 ```bash
+# Terminal 1: Apollo GraphQL Server
 cd subsquid
 DOTENV_CONFIG_PATH=../.env pnpm serve:apollo
-```
 
-The server starts at **http://localhost:4000**. Test it:
+# Terminal 2: Arbitrage Agent (optional)
+cd subsquid
+PRIVATE_KEY=0x... node dist/index.js start --auto
 
-```bash
-curl http://localhost:4000 \
-  -H 'Content-Type: application/json' \
-  -d '{"query":"{ tokens { id symbol totalPools } pools { id token0 { symbol } token1 { symbol } } }"}'
-```
-
-### 7. Start the Client
-
-```bash
+# Terminal 3: Frontend
 cd client
 pnpm dev
 ```
 
-The client starts at **http://localhost:3000** (or next available port).
+**URLs:**
+- Frontend: http://localhost:3000
+- GraphQL: http://localhost:4000
+- GraphQL Playground: http://localhost:4000/graphql
 
-Open it in your browser to see the 3D pool graph with all tokens and pool connections.
+## Frontend Pages
 
-## Running with Docker (Indexer + DB)
+| Page | Path | Description |
+|------|------|-------------|
+| **Galaxy** | `/` | 3D pool graph visualization |
+| **Swap** | `/swap` | Token swapping interface |
+| **Liquidity** | `/liquidity` | Add/remove liquidity |
+| **Staking** | `/staking` | GRS token staking & rewards |
+| **Faucet** | `/faucet` | Free testnet tokens |
+| **Arbitrage** | `/arbitrage` | Agent history & stats |
+
+## GRS Platform Token
+
+### Benefits
+
+| Tier | Requirement | Fee Discount | Benefits |
+|------|-------------|--------------|----------|
+| Silver | 1,000 GRS | 5% | Reduced fees, airdrop eligible |
+| Gold | 10,000 GRS | 10% | Lower fees, priority support |
+| Platinum | 100,000 GRS | 25% | Max discount, exclusive access |
+
+### Staking Rewards
+
+- **Base APR:** 10%
+- **Boosted APR:** 20% (with 30-day lock)
+- **Minimum Stake:** 100 GRS
+- **Lock Period:** 30 days for 2x boost
+
+## Arbitrage Agent
+
+The AI-powered arbitrage agent scans for profitable trading routes and executes real transactions.
+
+### Commands
 
 ```bash
 cd subsquid
-docker compose up -d
+
+# Single scan
+node dist/index.js scan
+
+# Continuous operation
+node dist/index.js start --auto
+
+# Market analysis
+node dist/index.js analyze
+
+# View history
+node dist/index.js history --limit=20
 ```
 
-This starts PostgreSQL and the Subsquid processor. The API is exposed on port **4350**.
+### Features
 
-## Project Details
+- Real-time opportunity detection
+- LLM-powered analysis (OpenRouter)
+- Actual transaction execution via viem
+- Trade history tracking
+- Configurable profit thresholds
 
-### Client (`client/`)
-
-Next.js 16 app with a 3D visualization of the DEX pool graph using Three.js.
-
-- **3D Scene**: Tokens as glowing spheres, pools as connecting lines
-- **Central Token**: The most connected token (by pool count) is placed at the origin
-- **Live Data**: Fetches from the Apollo GraphQL server; falls back to static mock data if unavailable
-- **Tech**: React 19, Three.js, Tailwind CSS
-
-```bash
-pnpm dev       # Development server
-pnpm build     # Production build
-pnpm start     # Production server
-```
-
-### Indexer (`subsquid/`)
-
-Subsquid EVM processor that indexes gSwap factory events on Polkadot Hub EVM.
-
-**Indexed events:** `PoolCreated`, `Sync`, `Swap`, `Mint`, `Burn`
-
-```bash
-pnpm build           # Compile TypeScript
-pnpm process         # Run the Subsquid processor
-pnpm serve           # Run the default Subsquid GraphQL server
-pnpm serve:apollo    # Run the custom Apollo GraphQL server (recommended)
-pnpm migration:apply # Apply DB migrations
-pnpm codegen         # Regenerate TypeORM models from schema.graphql
-pnpm typegen         # Regenerate ABI type bindings
-```
-
-**GraphQL API** (Apollo server on port 4000):
-
-| Query | Description |
-|---|---|
-| `tokens` | All indexed tokens |
-| `pools` | All pools with token relations and reserves |
-| `pool(address)` | Single pool by address |
-| `poolsByToken(token)` | All pools containing a token |
-| `graph` | Full graph structure (nodes + edges) |
-| `arbitrageRoutes(startToken, maxHops)` | Find cyclic arbitrage routes |
-| `calculateRouteProfit(route, amountIn)` | Calculate profit for a route |
-
-### Contracts (`contracts/`)
-
-Solidity smart contracts built with Foundry.
-
-- **gSwapFactory.sol** — Factory for deploying liquidity pools
-- **gPool.sol** — AMM liquidity pool (Uniswap V2 style, constant product)
-- **MockERC20.sol** — Test tokens
+## Contract Development
 
 ```bash
 cd contracts
-forge build    # Compile contracts
-forge test     # Run tests
+
+# Compile
+forge build
+
+# Test
+forge test -vvv
+
+# Deploy GRS (example)
+forge script script/DeployGRS.s.sol \
+  --rpc-url https://services.polkadothub-rpc.com/testnet \
+  --private-key $PRIVATE_KEY \
+  --broadcast
 ```
 
-### Agent (`agent/`)
+## GraphQL API
 
-Arbitrage detection agent that queries the GraphQL API to find profitable trade routes.
+**Endpoint:** `http://localhost:4000/graphql`
 
-## Deployed Contracts
+### Example Queries
 
-| Contract | Address | Network |
-|---|---|---|
-| gSwapFactory | `0x02065b6786f0198686d31b646e75330e9829750c` | Polkadot Hub Testnet (Chain ID: 420420417) |
+```graphql
+# Get all tokens
+query {
+  tokens {
+    address
+    symbol
+    decimals
+    totalPools
+  }
+}
 
-Explorer: https://blockscout-testnet.polkadot.io/address/0x02065b6786f0198686d31b646e75330e9829750c
+# Get pools
+query {
+  pools {
+    address
+    token0 { symbol }
+    token1 { symbol }
+    reserve0
+    reserve1
+  }
+}
+
+# Find arbitrage routes
+query {
+  arbitrageRoutes(
+    startToken: "0x375b3Ee0CfC16FaD04b2b8DF2fa48C3565320A5B"
+    maxHops: 4
+  )
+}
+
+# Calculate route profit
+query {
+  calculateRouteProfit(
+    route: ["0x...", "0x...", "0x..."]
+    amountIn: "1000000000"
+  ) {
+    profit
+    profitPercent
+    viable
+  }
+}
+```
+
+## Project Structure
+
+```
+gswap/
+├── contracts/
+│   ├── src/
+│   │   ├── gSwapFactory.sol      # Pool factory
+│   │   ├── gPool.sol             # AMM pool (x*y=k)
+│   │   ├── MockERC20.sol         # Test tokens
+│   │   ├── MockGRS.sol           # Platform token
+│   │   └── GRSStaking.sol        # Staking contract
+│   ├── script/
+│   │   ├── DeployGSwap.s.sol     # Main deployment
+│   │   ├── DeployGRS.s.sol       # GRS deployment
+│   │   └── MintTokens.s.sol      # Token minting
+│   └── test/
+├── subsquid/
+│   ├── src/
+│   │   ├── agent.ts              # Agent orchestration
+│   │   ├── index.ts              # CLI entry
+│   │   ├── arbitrage/
+│   │   │   └── calculator.ts     # Opportunity finder
+│   │   ├── executor/
+│   │   │   └── transaction.ts    # Real execution
+│   │   ├── graphql/
+│   │   │   ├── apolloServer.ts   # GraphQL server
+│   │   │   └── client.ts         # GraphQL client
+│   │   └── llm/
+│   │       └── analyzer.ts       # LLM integration
+│   └── schema.graphql
+├── client/
+│   ├── src/
+│   │   ├── app/
+│   │   │   ├── page.tsx          # Galaxy view
+│   │   │   ├── swap/
+│   │   │   ├── liquidity/
+│   │   │   ├── staking/          # GRS staking
+│   │   │   ├── faucet/           # Token faucet
+│   │   │   └── arbitrage/        # Agent history
+│   │   ├── hooks/
+│   │   │   ├── useFaucet.ts
+│   │   │   └── useGRSStaking.ts
+│   │   └── config/
+│   │       ├── tokens.ts         # Token addresses
+│   │       └── chain.ts          # Chain config
+│   └── package.json
+├── package.json
+└── .env.example
+```
+
+## Environment Variables
+
+```bash
+# Required
+RPC_ENDPOINT=https://services.polkadothub-rpc.com/testnet
+PRIVATE_KEY=0x...                    # For agent execution
+DB_NAME=gswap
+DB_USER=postgres
+DB_PASS=postgres
+
+# Optional
+OPENROUTER_API_KEY=sk-or-v1-...      # For LLM analysis
+OPENROUTER_MODEL=qwen/qwen3-coder:free
+MAX_GAS_PRICE=500000000000           # 500 gwei
+```
 
 ## Known Limitations
 
-- **`eth_getLogs` is broken** on Polkadot Hub EVM (PolkaVM). The Subsquid processor cannot index events efficiently. Use the Blockscout seed script as a workaround.
-- **Pool reserves are 0** if no liquidity has been added on-chain. Re-run the seed script after adding liquidity.
-- The RPC endpoint `services.polkadothub-rpc.com/testnet` corresponds to chain ID **420420417** (Polkadot Hub Testnet / Passet Hub), not Westend Asset Hub (420420421).
+- **`eth_getLogs` is broken** on Polkadot Hub EVM (PolkaVM). We use Blockscout API for indexing.
+- **No archive node** exists for Polkadot Hub yet. The processor runs in RPC-only mode.
+- **Agent execution** requires sufficient token balances and gas funds.
+
+## Tech Stack
+
+| Component | Technology |
+|-----------|------------|
+| Smart Contracts | Solidity 0.8.20, Foundry, OpenZeppelin |
+| Indexer | Subsquid, TypeORM, PostgreSQL |
+| GraphQL | Apollo Server, GraphQL |
+| Agent | TypeScript, viem, OpenRouter |
+| Frontend | Next.js 16, React 19, Three.js, Tailwind CSS |
+| Blockchain | Polkadot Hub EVM (Chain ID: 420420417) |
+
+## Contributing
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+## License
+
+MIT
+
+## Links
+
+- **Explorer:** https://blockscout-passet-hub.parity-testchain.parity.io
+- **Polkadot Hub:** https://wiki.polkadot.network/docs/learn-guides-accounts
+- **Subsquid:** https://docs.subsquid.io/
+- **OpenRouter:** https://openrouter.ai/docs
+- **Foundry:** https://book.getfoundry.sh/
