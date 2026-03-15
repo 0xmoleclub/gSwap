@@ -1,0 +1,47 @@
+# gSwap GraphQL Schema - State Only
+# Tracks current pool state, not historical events
+
+type Factory @entity {
+  id: ID!
+  address: String! @unique
+  poolCount: Int!
+  pools: [Pool!]! @derivedFrom(field: "factory")
+  totalVolumeUSD: BigInt!
+  totalFeesUSD: BigInt!
+}
+
+type Token @entity {
+  id: ID!
+  address: String! @unique
+  symbol: String
+  name: String
+  decimals: Int
+  pools0: [Pool!]! @derivedFrom(field: "token0")
+  pools1: [Pool!]! @derivedFrom(field: "token1")
+  totalPools: Int!
+}
+
+type Pool @entity {
+  id: ID!
+  address: String! @unique
+  factory: Factory!
+  token0: Token!
+  token1: Token!
+  
+  # Current state (updated on every Sync event)
+  reserve0: BigInt!
+  reserve1: BigInt!
+  swapFee: Int!
+  totalSupply: BigInt!
+  
+  # Metadata
+  blockNumber: BigInt!
+  timestamp: DateTime!
+  createdAt: DateTime!
+  updatedAt: DateTime!
+  
+  # Aggregated stats (updated on events, not stored individually)
+  volumeToken0: BigInt!
+  volumeToken1: BigInt!
+  txCount: Int!
+}
