@@ -3,7 +3,7 @@
 import Link from 'next/link';
 
 interface NavbarProps {
-  currentView: 'home' | 'swap' | 'liquidity' | 'staking' | 'arbitrage';
+  currentView: 'home' | 'swap' | 'liquidity' | 'staking' | 'arbitrage' | 'faucet';
 }
 
 export function Navbar({ currentView }: NavbarProps) {
@@ -12,6 +12,7 @@ export function Navbar({ currentView }: NavbarProps) {
     { id: 'swap' as const, label: 'Swap', href: '/swap', icon: '⇄' },
     { id: 'liquidity' as const, label: 'Liquidity', href: '/liquidity', icon: '◎' },
     { id: 'staking' as const, label: 'Staking', href: '/staking', icon: '⬡' },
+    { id: 'faucet' as const, label: 'Faucet', href: '/faucet', icon: '🚰' },
     { id: 'arbitrage' as const, label: 'Arbitrage', href: '/arbitrage', icon: '🤖' },
   ];
 
