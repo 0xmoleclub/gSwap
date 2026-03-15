@@ -10,6 +10,29 @@ export interface TokenConfig {
   color?: string;
 }
 
+// GRS Platform Token (gSwap Token)
+export const GRS_TOKEN: TokenConfig = {
+  address: '', // Will be filled after deployment
+  symbol: 'GRS',
+  name: 'gSwap Token',
+  decimals: 18,
+  isHub: false,
+  color: '#E6007A', // Polkadot pink
+};
+
+// GRS Platform Token - DEPLOYED
+export const GRS_TOKEN: TokenConfig = {
+  address: '0x9d1939134297c5fa44A793c3E618f8D7Ba793024',
+  symbol: 'GRS',
+  name: 'gSwap Token',
+  decimals: 18,
+  isHub: false,
+  color: '#E6007A', // Polkadot pink
+};
+
+export const STAKING_CONTRACT = '0x5a36D068898e8db3D089727890f89ae60a4b8c78';
+export const GRS_USDT_POOL = '0xc296599d2cc3D0BC7577Fd0f0AE8254519976A2c';
+
 export const TOKENS: TokenConfig[] = [
   {
     address: '0x375b3Ee0CfC16FaD04b2b8DF2fa48C3565320A5B',
@@ -120,6 +143,14 @@ export const TOKENS: TokenConfig[] = [
     decimals: 18,
     color: '#00A3FF',
   },
+  // GRS Platform Token - add to list when deployed (address filled in GRS_TOKEN above)
+  // {
+  //   address: '',
+  //   symbol: 'GRS',
+  //   name: 'gSwap Token',
+  //   decimals: 18,
+  //   color: '#E6007A',
+  // },
 ];
 
 // Get hub tokens (USDT, USDC, DAI, WETH)

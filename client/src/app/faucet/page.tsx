@@ -8,7 +8,7 @@ import { NebulaBg } from '@/components/NebulaBg';
 
 import { useWallet } from '@/context/WalletContext';
 import { useFaucet, useTokenBalance } from '@/hooks/useFaucet';
-import { TOKENS, HUB_TOKENS, USDT_TOKEN, type TokenConfig } from '@/config/tokens';
+import { TOKENS, HUB_TOKENS, USDT_TOKEN, GRS_TOKEN, type TokenConfig } from '@/config/tokens';
 import { getTxUrl } from '@/config/chain';
 import { globalStyles } from '@/styles/global-styles';
 
@@ -20,10 +20,13 @@ export default function FaucetPage() {
   const [activeTab, setActiveTab] = useState<'hub' | 'all'>('hub');
   const [refreshing, setRefreshing] = useState(false);
 
+  // All tokens including GRS
+  const ALL_FAUCET_TOKENS = [...TOKENS, GRS_TOKEN];
+
   // Fetch balances on mount and when address changes
   useEffect(() => {
     if (address) {
-      fetchAllBalances(TOKENS, address);
+      fetchAllBalances(ALL_FAUCET_TOKENS, address);
     }
   }, [address, fetchAllBalances]);
 
@@ -45,11 +48,11 @@ export default function FaucetPage() {
   const handleRefresh = async () => {
     if (!address) return;
     setRefreshing(true);
-    await fetchAllBalances(TOKENS, address);
+    await fetchAllBalances(ALL_FAUCET_TOKENS, address);
     setRefreshing(false);
   };
 
-  const displayTokens = activeTab === 'hub' ? HUB_TOKENS : TOKENS;
+  const displayTokens = activeTab === 'hub' ? HUB_TOKENS : ALL_FAUCET_TOKENS;
 
   return (
     <div className="relative w-full min-h-screen bg-void overflow-hidden font-sans text-white noise-overlay">
@@ -79,6 +82,32 @@ export default function FaucetPage() {
                 Get free testnet tokens to start trading on gSwap. 
                 <span className="text-nebula-purple"> USDT is recommended</span> as it connects to the most trading pairs.
               </p>
+            </div>
+
+            {/* GRS Platform Token Banner */}
+            <div className="glass-panel rounded-xl p-5 border border-pink-500/30 bg-gradient-to-r from-pink-500/10 to-purple-500/10">
+              <div className="flex items-start gap-4">
+                <div className="w-12 h-12 rounded-xl bg-pink-500/20 flex items-center justify-center text-2xl">
+                  ⬡
+                </div>
+                <div className="flex-1">
+                  <h3 className="font-semibold text-pink-300 mb-1">🚀 New: gSwap Token (GRS)</h3>
+                  <p className="text-sm text-white/70 mb-2">
+                    The gSwap platform token is now live! Stake GRS to earn rewards, reduce trading fees, and unlock exclusive benefits.
+                  </p>
+                  <div className="flex flex-wrap gap-2 text-xs">
+                    <span className="px-2 py-1 rounded bg-pink-500/20 text-pink-300">Up to 20% APR</span>
+                    <span className="px-2 py-1 rounded bg-pink-500/20 text-pink-300">25% Fee Discount</span>
+                    <span className="px-2 py-1 rounded bg-pink-500/20 text-pink-300">Airdrop Eligible</span>
+                  </div>
+                </div>
+                <a
+                  href="/staking"
+                  className="px-4 py-2 rounded-lg bg-pink-500 hover:bg-pink-600 transition-all text-white font-medium text-sm"
+                >
+                  Stake GRS →
+                </a>
+              </div>
             </div>
 
             {/* Info Banner */}
@@ -115,7 +144,7 @@ export default function FaucetPage() {
                     : 'text-white/50 hover:text-white hover:bg-white/5'
                 }`}
               >
-                All Tokens ({TOKENS.length})
+                All Tokens ({ALL_FAUCET_TOKENS.length})
               </button>
               <button
                 onClick={handleRefresh}
