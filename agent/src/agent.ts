@@ -6,7 +6,7 @@
 import { SubsquidClient, Pool } from './graphql/client.js';
 import { ArbitrageCalculator, ArbitrageOpportunity } from './arbitrage/calculator.js';
 import { LLMAnalyzer, ExecutionDecision, MarketAnalysis } from './llm/analyzer.js';
-import { TransactionExecutor, TransactionResult } from './executor/transaction.js';
+import { TransactionExecutor, TransactionResult, ArbitrageTrade, tradeHistory } from './executor/transaction.js';
 
 export interface AgentConfig {
   // GraphQL
@@ -42,10 +42,10 @@ const DEFAULT_CONFIG: AgentConfig = {
   ethPriceUSD: 2000,
   llmApiKey: process.env.OPENROUTER_API_KEY || '',
   llmModel: process.env.OPENROUTER_MODEL || 'arcee-ai/trinity-large-preview:free',
-  rpcUrl: process.env.RPC_URL || 'http://localhost:8545',
+  rpcUrl: process.env.RPC_URL || 'https://services.polkadothub-rpc.com/testnet',
   privateKey: process.env.PRIVATE_KEY || '',
-  chainId: parseInt(process.env.CHAIN_ID || '1'),
-  maxGasPrice: BigInt(process.env.MAX_GAS_PRICE || '50000000000'),
+  chainId: parseInt(process.env.CHAIN_ID || '420420417'),
+  maxGasPrice: BigInt(process.env.MAX_GAS_PRICE || '500000000000'),
   autoExecute: false,
   pollIntervalMs: 5000,
   maxConcurrentOpportunities: 3,
@@ -58,6 +58,7 @@ export interface AgentStatus {
   opportunitiesExecuted: number;
   totalProfit: number;
   errors: string[];
+  walletAddress?: string;
 }
 
 export class ArbitrageAgent {
@@ -99,12 +100,23 @@ export class ArbitrageAgent {
       temperature: 0.3,
     });
     
-    this.executor = new TransactionExecutor({
-      rpcUrl: this.config.rpcUrl,
-      privateKey: this.config.privateKey,
-      chainId: this.config.chainId,
-      maxGasPrice: this.config.maxGasPrice,
-    });
+    // Initialize real transaction executor
+    try {
+      this.executor = new TransactionExecutor({
+        rpcUrl: this.config.rpcUrl,
+        privateKey: this.config.privateKey,
+        chainId: this.config.chainId,
+        maxGasPrice: this.config.maxGasPrice,
+      });
+      
+      const executorStatus = this.executor.getStatus();
+      this.status.walletAddress = executorStatus.walletAddress;
+    } catch (error: any) {
+      console.warn(`⚠️ Failed to initialize executor: ${error.message}`);
+      console.warn('   Agent will run in simulation mode only');
+      // Create a dummy executor for simulation mode
+      this.executor = null as any;
+    }
   }
 
   /**
@@ -119,6 +131,8 @@ export class ArbitrageAgent {
     console.log('\n🤖 gSwap Arbitrage Agent Starting...\n');
     console.log('Configuration:');
     console.log(`  GraphQL: ${this.config.graphqlEndpoint}`);
+    console.log(`  RPC: ${this.config.rpcUrl}`);
+    console.log(`  Wallet: ${this.status.walletAddress || 'Not configured'}`);
     console.log(`  Min Profit: ${this.config.minProfitPercent}%`);
     console.log(`  Max Hops: ${this.config.maxHops}`);
     console.log(`  Auto Execute: ${this.config.autoExecute ? '✅' : '❌'}`);
@@ -258,6 +272,11 @@ export class ArbitrageAgent {
   ): Promise<void> {
     console.log('\n🚀 Executing opportunity...');
     
+    if (!this.executor) {
+      console.log('❌ Executor not initialized. Cannot execute trades.');
+      return;
+    }
+    
     // Pre-flight checks
     const checks = await this.executor.preflightChecks(opportunity);
     if (!checks.passed) {
@@ -317,6 +336,11 @@ export class ArbitrageAgent {
   async manualExecute(opportunityId: string): Promise<TransactionResult | null> {
     console.log(`\n🔧 Manual execution for: ${opportunityId}`);
     
+    if (!this.executor) {
+      console.log('❌ Executor not initialized');
+      return null;
+    }
+    
     // In a real implementation, we'd look up the opportunity
     // For now, scan and find matching ID
     const tokens = await this.client.getAllTokens();
@@ -334,6 +358,27 @@ export class ArbitrageAgent {
     
     console.log('❌ Opportunity not found');
     return null;
+  }
+
+  /**
+   * Get trade history
+   */
+  getTradeHistory(limit: number = 100): ArbitrageTrade[] {
+    if (this.executor) {
+      return this.executor.getTradeHistory(limit);
+    }
+    return tradeHistory.slice(0, limit);
+  }
+
+  /**
+   * Clear trade history
+   */
+  clearTradeHistory(): void {
+    if (this.executor) {
+      this.executor.clearTradeHistory();
+    } else {
+      tradeHistory.length = 0;
+    }
   }
 
   /**
@@ -367,3 +412,6 @@ export class ArbitrageAgent {
     console.log('✅ Configuration updated');
   }
 }
+
+// Re-export trade history types
+export { ArbitrageTrade, TransactionResult };

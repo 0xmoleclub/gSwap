@@ -55,6 +55,8 @@ Commands:
   scan               Run a single scan for opportunities
   analyze            Get market analysis from LLM
   status             Show agent status
+  history            Show trade history
+  clear-history      Clear trade history
   help               Show this help message
 
 Options:
@@ -63,12 +65,15 @@ Options:
   --profit=<pct>     Minimum profit percentage (default: 0.1)
   --hops=<n>         Maximum hops (default: 4)
   --key=<apikey>     OpenRouter API key (optional, reads from .env)
+  --limit=<n>        Limit for history command (default: 20)
 
 Environment Variables:
   OPENROUTER_API_KEY    Your OpenRouter API key
   OPENROUTER_MODEL      Model to use (default: qwen/qwen3-coder:free)
   RPC_URL              Blockchain RPC endpoint (production)
   PRIVATE_KEY          Wallet private key (production)
+  CHAIN_ID             Chain ID (default: 420420417 for Polkadot Hub)
+  MAX_GAS_PRICE        Max gas price in wei (default: 500000000000)
 
 Examples:
   # Single scan against local Apollo server
@@ -80,9 +85,45 @@ Examples:
   # Continuous polling
   node dist/index.js start --endpoint=http://localhost:4000
 
+  # Continuous with auto-execution (requires PRIVATE_KEY)
+  node dist/index.js start --auto
+
   # LLM market analysis
   node dist/index.js analyze --key="sk-or-v1-..."
+
+  # View trade history
+  node dist/index.js history --limit=10
   `);
+}
+
+// Format trade history for display
+function formatHistory(trades: any[], limit: number): void {
+  if (trades.length === 0) {
+    console.log('\n📊 No trades in history yet.');
+    return;
+  }
+
+  console.log(`\n📊 Last ${Math.min(trades.length, limit)} Trades:`);
+  console.log('='.repeat(100));
+  
+  trades.slice(0, limit).forEach((trade, i) => {
+    const date = new Date(trade.timestamp).toLocaleString();
+    const route = trade.routeSymbols.join(' → ');
+    const status = trade.status === 'success' ? '✅' : trade.status === 'pending' ? '⏳' : '❌';
+    
+    console.log(`\n${i + 1}. ${status} ${date}`);
+    console.log(`   Route: ${route}`);
+    console.log(`   Profit: $${trade.profitUSD?.toFixed(4) || 'N/A'} | Net: $${trade.netProfitUSD?.toFixed(4) || 'N/A'}`);
+    console.log(`   Gas: ${trade.gasCost || 'N/A'} wei`);
+    console.log(`   Tx: ${trade.txHash?.slice(0, 20)}...${trade.txHash?.slice(-8) || 'N/A'}`);
+    
+    if (trade.error) {
+      console.log(`   Error: ${trade.error}`);
+    }
+  });
+  
+  console.log('\n' + '='.repeat(100));
+  console.log(`Total trades: ${trades.length}`);
 }
 
 // Main function
@@ -96,18 +137,23 @@ async function main(): Promise<void> {
     maxHops: parseInt(options.hops || '4'),
     llmApiKey: options.key || process.env.OPENROUTER_API_KEY || '',
     llmModel: process.env.OPENROUTER_MODEL || 'qwen/qwen3-coder:free',
+    rpcUrl: process.env.RPC_URL || 'https://services.polkadothub-rpc.com/testnet',
+    privateKey: process.env.PRIVATE_KEY || '',
+    chainId: parseInt(process.env.CHAIN_ID || '420420417'),
+    maxGasPrice: BigInt(process.env.MAX_GAS_PRICE || '500000000000'),
     autoExecute: options.auto === 'true' || false,
   };
-
-  // Check for OpenRouter API key
-  if (!agentConfig.llmApiKey) {
-    console.log('\n⚠️  WARNING: No OPENROUTER_API_KEY found in .env');
-    console.log('   Set it to use LLM analysis.\n');
-  }
 
   switch (command) {
     case 'start': {
       console.log('\n🚀 Starting gSwap Arbitrage Agent...\n');
+
+      // Check for required config
+      if (agentConfig.autoExecute && !agentConfig.privateKey) {
+        console.error('❌ Error: PRIVATE_KEY is required for auto-execution');
+        console.error('   Set it in .env or pass as environment variable');
+        process.exit(1);
+      }
 
       const agent = new ArbitrageAgent(agentConfig);
       await agent.start();
@@ -145,8 +191,43 @@ async function main(): Promise<void> {
     }
 
     case 'status': {
-      console.log('\nℹ️  To get status, the agent must be running.\n');
-      console.log('Use: node dist/index.js start');
+      console.log('\n📊 Agent Status\n');
+      
+      const agent = new ArbitrageAgent(agentConfig);
+      const status = agent.getStatus();
+      
+      console.log(`Running: ${status.isRunning ? '✅ Yes' : '❌ No'}`);
+      console.log(`Wallet: ${status.walletAddress || 'Not configured'}`);
+      console.log(`Last Scan: ${status.lastScan?.toISOString() || 'Never'}`);
+      console.log(`Opportunities Found: ${status.opportunitiesFound}`);
+      console.log(`Opportunities Executed: ${status.opportunitiesExecuted}`);
+      console.log(`Total Profit: $${status.totalProfit.toFixed(4)}`);
+      console.log(`Errors: ${status.errors.length}`);
+      
+      process.exit(0);
+      break;
+    }
+
+    case 'history': {
+      const limit = parseInt(options.limit || '20');
+      
+      const agent = new ArbitrageAgent(agentConfig);
+      const trades = agent.getTradeHistory(limit);
+      
+      formatHistory(trades, limit);
+      
+      process.exit(0);
+      break;
+    }
+
+    case 'clear-history': {
+      console.log('\n🗑️  Clearing trade history...');
+      
+      const agent = new ArbitrageAgent(agentConfig);
+      agent.clearTradeHistory();
+      
+      console.log('✅ Trade history cleared');
+      
       process.exit(0);
       break;
     }

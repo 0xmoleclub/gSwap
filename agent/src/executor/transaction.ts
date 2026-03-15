@@ -3,15 +3,41 @@
  * Handles blockchain interactions for executing arbitrage trades
  */
 
+import { 
+  createWalletClient, 
+  createPublicClient, 
+  http, 
+  type Hex,
+  type TransactionReceipt,
+  encodeFunctionData,
+  parseAbi,
+} from 'viem';
+import { privateKeyToAccount } from 'viem/accounts';
 import { ArbitrageOpportunity } from '../arbitrage/calculator.js';
 import { ExecutionDecision } from '../llm/analyzer.js';
 import { Pool } from '../graphql/client.js';
+
+// Polkadot Hub EVM Chain Configuration
+const POLKADOT_HUB_EVM = {
+  id: 420420417,
+  name: 'Polkadot Hub EVM',
+  nativeCurrency: {
+    name: 'DOT',
+    symbol: 'DOT',
+    decimals: 18,
+  },
+  rpcUrls: {
+    default: {
+      http: ['https://services.polkadothub-rpc.com/testnet'],
+    },
+  },
+};
 
 export interface ExecutorConfig {
   rpcUrl: string;
   privateKey: string;
   chainId: number;
-  maxGasPrice: bigint; // in wei
+  maxGasPrice: bigint;
   minConfirmations: number;
   flashloanEnabled: boolean;
 }
@@ -23,7 +49,7 @@ export interface TransactionResult {
   gasCost?: bigint;
   actualProfit?: bigint;
   error?: string;
-  receipt?: any;
+  receipt?: TransactionReceipt;
 }
 
 export interface SwapStep {
@@ -34,28 +60,90 @@ export interface SwapStep {
   minAmountOut: bigint;
 }
 
+export interface ArbitrageTrade {
+  id: string;
+  timestamp: number;
+  route: string[];
+  routeSymbols: string[];
+  amountIn: string;
+  amountOut: string;
+  profit: string;
+  profitUSD: number;
+  gasCost: string;
+  gasCostUSD: number;
+  netProfitUSD: number;
+  txHash: string;
+  status: 'pending' | 'success' | 'failed';
+  error?: string;
+}
+
+// ERC20 ABI for approvals
+const ERC20_ABI = parseAbi([
+  'function approve(address spender, uint256 amount) external returns (bool)',
+  'function allowance(address owner, address spender) external view returns (uint256)',
+  'function balanceOf(address account) external view returns (uint256)',
+  'function decimals() external view returns (uint8)',
+  'function symbol() external view returns (string)',
+]);
+
+// gPool ABI for swaps
+const GPOOL_ABI = parseAbi([
+  'function swap(address tokenIn, uint256 amountIn, uint256 minAmountOut, uint256 deadline) external returns (uint256 amountOut)',
+  'function getAmountOut(uint256 amountIn, uint256 reserveIn, uint256 reserveOut) external view returns (uint256)',
+  'function token0() external view returns (address)',
+  'function token1() external view returns (address)',
+  'function reserve0() external view returns (uint256)',
+  'function reserve1() external view returns (uint256)',
+]);
+
 const DEFAULT_CONFIG: ExecutorConfig = {
-  rpcUrl: process.env.RPC_URL || 'http://localhost:8545',
+  rpcUrl: process.env.RPC_URL || 'https://services.polkadothub-rpc.com/testnet',
   privateKey: process.env.PRIVATE_KEY || '',
-  chainId: parseInt(process.env.CHAIN_ID || '1'),
-  maxGasPrice: BigInt(process.env.MAX_GAS_PRICE || '50000000000'), // 50 gwei
+  chainId: parseInt(process.env.CHAIN_ID || '420420417'),
+  maxGasPrice: BigInt(process.env.MAX_GAS_PRICE || '500000000000'), // 500 gwei
   minConfirmations: 1,
   flashloanEnabled: false,
 };
 
+// In-memory trade history (will be replaced with proper storage in production)
+const tradeHistory: ArbitrageTrade[] = [];
+
 export class TransactionExecutor {
   private config: ExecutorConfig;
-  private nonce: number = 0;
+  private publicClient: ReturnType<typeof createPublicClient>;
+  private walletClient: ReturnType<typeof createWalletClient>;
+  private account: ReturnType<typeof privateKeyToAccount>;
 
   constructor(config: Partial<ExecutorConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
+    
+    if (!this.config.privateKey) {
+      throw new Error('Private key is required for transaction execution');
+    }
+    
+    // Ensure private key has 0x prefix
+    const pk = this.config.privateKey.startsWith('0x') 
+      ? this.config.privateKey as Hex
+      : `0x${this.config.privateKey}` as Hex;
+    
+    this.account = privateKeyToAccount(pk);
+    
+    this.publicClient = createPublicClient({
+      chain: POLKADOT_HUB_EVM,
+      transport: http(this.config.rpcUrl),
+    });
+    
+    this.walletClient = createWalletClient({
+      account: this.account,
+      chain: POLKADOT_HUB_EVM,
+      transport: http(this.config.rpcUrl),
+    });
+    
+    console.log(`🚀 TransactionExecutor initialized for wallet: ${this.account.address}`);
   }
 
   /**
    * Execute an arbitrage transaction
-   * 
-   * NOTE: This is a MOCK implementation for testing.
-   * In production, this would use viem to submit actual transactions.
    */
   async executeArbitrage(
     opportunity: ArbitrageOpportunity,
@@ -85,17 +173,11 @@ export class TransactionExecutor {
     // Prepare swap steps
     const steps = await this.prepareSwapSteps(opportunity, pools);
     
-    // Simulate execution (mock)
-    const result = await this.simulateExecution(steps, opportunity, decision);
+    // Execute the arbitrage
+    const result = await this.executeSwaps(steps, opportunity);
     
-    if (result.success) {
-      console.log('✅ Transaction simulated successfully!');
-      console.log(`Hash: ${result.hash}`);
-      console.log(`Gas Used: ${result.gasUsed}`);
-      console.log(`Actual Profit: ${result.actualProfit}`);
-    } else {
-      console.error('❌ Transaction failed:', result.error);
-    }
+    // Record trade in history
+    this.recordTrade(opportunity, result);
     
     return result;
   }
@@ -126,12 +208,47 @@ export class TransactionExecutor {
         throw new Error(`No pool found for ${tokenIn} -> ${tokenOut}`);
       }
       
+      // Calculate minAmountOut with 0.5% slippage tolerance
+      const poolContract = {
+        address: pool.address as Hex,
+        abi: GPOOL_ABI,
+      };
+      
+      const [reserve0, reserve1, token0Addr] = await Promise.all([
+        this.publicClient.readContract({
+          ...poolContract,
+          functionName: 'reserve0',
+        }),
+        this.publicClient.readContract({
+          ...poolContract,
+          functionName: 'reserve1',
+        }),
+        this.publicClient.readContract({
+          ...poolContract,
+          functionName: 'token0',
+        }),
+      ]);
+      
+      const reserveIn = token0Addr.toLowerCase() === tokenIn.toLowerCase() ? reserve0 : reserve1;
+      const reserveOut = token0Addr.toLowerCase() === tokenIn.toLowerCase() ? reserve1 : reserve0;
+      
+      const amountIn = i === 0 ? BigInt(opportunity.amountIn) : steps[i-1].minAmountOut;
+      
+      const amountOut = await this.publicClient.readContract({
+        ...poolContract,
+        functionName: 'getAmountOut',
+        args: [amountIn, reserveIn, reserveOut],
+      });
+      
+      // 0.5% slippage tolerance
+      const minAmountOut = (amountOut * 995n) / 1000n;
+      
       steps.push({
         pool: pool.address,
         tokenIn,
         tokenOut,
-        amountIn: i === 0 ? BigInt(opportunity.amountIn) : 0n, // First step only
-        minAmountOut: 0n, // Would calculate with slippage
+        amountIn,
+        minAmountOut,
       });
     }
     
@@ -139,74 +256,172 @@ export class TransactionExecutor {
   }
 
   /**
-   * Simulate transaction execution (mock)
-   * 
-   * In production, this would:
-   * 1. Create viem wallet client
-   * 2. Estimate gas
-   * 3. Submit transaction
-   * 4. Wait for confirmation
+   * Execute swaps sequentially
    */
-  private async simulateExecution(
-    _steps: SwapStep[],
-    opportunity: ArbitrageOpportunity,
-    _decision: ExecutionDecision
+  private async executeSwaps(
+    steps: SwapStep[],
+    opportunity: ArbitrageOpportunity
   ): Promise<TransactionResult> {
-    // Simulate network delay
-    await this.delay(500);
+    const txHashes: Hex[] = [];
+    let totalGasUsed = 0n;
     
-    // Simulate randomness (90% success rate for testing)
-    const success = Math.random() > 0.1;
-    
-    if (!success) {
+    try {
+      for (let i = 0; i < steps.length; i++) {
+        const step = steps[i];
+        console.log(`\n  Step ${i + 1}/${steps.length}: ${step.tokenIn.slice(0, 10)}... → ${step.tokenOut.slice(0, 10)}...`);
+        
+        // Approve tokens if first step
+        if (i === 0) {
+          await this.approveToken(step.tokenIn as Hex, step.pool as Hex, step.amountIn);
+        }
+        
+        // Execute swap
+        const deadline = BigInt(Math.floor(Date.now() / 1000) + 300); // 5 min deadline
+        
+        const txHash = await this.walletClient.writeContract({
+          address: step.pool as Hex,
+          abi: GPOOL_ABI,
+          functionName: 'swap',
+          args: [
+            step.tokenIn,
+            step.amountIn,
+            step.minAmountOut,
+            deadline,
+          ],
+        });
+        
+        console.log(`  Transaction submitted: ${txHash}`);
+        
+        // Wait for confirmation
+        const receipt = await this.publicClient.waitForTransactionReceipt({
+          hash: txHash,
+          confirmations: this.config.minConfirmations,
+        });
+        
+        if (receipt.status === 'reverted') {
+          throw new Error(`Transaction reverted: ${txHash}`);
+        }
+        
+        console.log(`  Confirmed! Gas used: ${receipt.gasUsed}`);
+        txHashes.push(txHash);
+        totalGasUsed += receipt.gasUsed;
+      }
+      
+      // Calculate actual profit
+      const gasPrice = await this.publicClient.getGasPrice();
+      const gasCost = totalGasUsed * gasPrice;
+      const profit = BigInt(opportunity.profit);
+      
+      return {
+        success: true,
+        hash: txHashes[0], // Return first tx hash as primary
+        gasUsed: totalGasUsed,
+        gasCost,
+        actualProfit: profit,
+      };
+      
+    } catch (error: any) {
+      console.error('❌ Transaction failed:', error);
       return {
         success: false,
-        error: 'Simulation: Transaction would revert (slippage exceeded)',
+        error: error.message || 'Unknown error',
       };
     }
+  }
+
+  /**
+   * Approve token spending
+   */
+  private async approveToken(token: Hex, spender: Hex, amount: bigint): Promise<void> {
+    // Check current allowance
+    const currentAllowance = await this.publicClient.readContract({
+      address: token,
+      abi: ERC20_ABI,
+      functionName: 'allowance',
+      args: [this.account.address, spender],
+    });
     
-    // Generate mock transaction hash
-    const hash = '0x' + Array.from({ length: 64 }, () => 
-      Math.floor(Math.random() * 16).toString(16)
-    ).join('');
+    if (currentAllowance >= amount) {
+      console.log(`  Token already approved`);
+      return;
+    }
     
-    // Simulate gas usage
-    const gasUsed = BigInt(opportunity.gasEstimate + Math.floor(Math.random() * 50000));
-    const gasCost = gasUsed * BigInt(20e9); // 20 gwei
+    console.log(`  Approving token...`);
     
-    // Simulate actual profit (with some variance)
-    const variance = (Math.random() - 0.5) * 0.1; // ±5% variance
-    const actualProfit = BigInt(
-      Math.floor(Number(opportunity.profit) * (1 + variance))
-    );
+    const txHash = await this.walletClient.writeContract({
+      address: token,
+      abi: ERC20_ABI,
+      functionName: 'approve',
+      args: [spender, amount],
+    });
     
-    this.nonce++;
+    await this.publicClient.waitForTransactionReceipt({
+      hash: txHash,
+      confirmations: this.config.minConfirmations,
+    });
     
-    return {
-      success: true,
-      hash,
-      gasUsed,
-      gasCost,
-      actualProfit,
-      receipt: {
-        blockNumber: 1000000 + this.nonce,
-        gasUsed,
-        status: 'success',
-      },
+    console.log(`  Approved!`);
+  }
+
+  /**
+   * Record trade in history
+   */
+  private recordTrade(opportunity: ArbitrageOpportunity, result: TransactionResult): void {
+    const trade: ArbitrageTrade = {
+      id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      timestamp: Date.now(),
+      route: opportunity.route,
+      routeSymbols: opportunity.routeSymbols,
+      amountIn: opportunity.amountIn,
+      amountOut: opportunity.amountOut,
+      profit: opportunity.profit,
+      profitUSD: opportunity.profitUSD,
+      gasCost: result.gasCost?.toString() || '0',
+      gasCostUSD: opportunity.gasCostUSD,
+      netProfitUSD: opportunity.netProfitUSD,
+      txHash: result.hash || '',
+      status: result.success ? 'success' : 'failed',
+      error: result.error,
     };
+    
+    tradeHistory.unshift(trade); // Add to beginning
+    
+    // Keep only last 1000 trades
+    if (tradeHistory.length > 1000) {
+      tradeHistory.pop();
+    }
+  }
+
+  /**
+   * Get trade history
+   */
+  getTradeHistory(limit: number = 100): ArbitrageTrade[] {
+    return tradeHistory.slice(0, limit);
+  }
+
+  /**
+   * Clear trade history
+   */
+  clearTradeHistory(): void {
+    tradeHistory.length = 0;
   }
 
   /**
    * Check wallet balance
    */
   async getBalance(token?: string): Promise<bigint> {
-    // Mock balance
     if (token) {
-      // Token balance
-      return BigInt('10000000000000000000'); // 10 ETH worth
+      return this.publicClient.readContract({
+        address: token as Hex,
+        abi: ERC20_ABI,
+        functionName: 'balanceOf',
+        args: [this.account.address],
+      });
     }
-    // ETH balance
-    return BigInt('5000000000000000000'); // 5 ETH
+    
+    return this.publicClient.getBalance({
+      address: this.account.address,
+    });
   }
 
   /**
@@ -229,8 +444,7 @@ export class TransactionExecutor {
    * Get current gas price
    */
   async getGasPrice(): Promise<bigint> {
-    // Mock gas price
-    return BigInt('20000000000'); // 20 gwei
+    return this.publicClient.getGasPrice();
   }
 
   /**
@@ -269,7 +483,7 @@ export class TransactionExecutor {
       errors.push('Gas price too high');
     }
     
-    // Check opportunity not expired (mock)
+    // Check opportunity not expired
     if (opportunity.profitPercent < 0.05) {
       errors.push('Opportunity profit too low');
     }
@@ -281,51 +495,24 @@ export class TransactionExecutor {
   }
 
   /**
-   * Build transaction data for a swap
-   * 
-   * In production, this would encode the function call
-   */
-  buildSwapData(step: SwapStep): string {
-    // Mock encoded data
-    return `0x${step.pool.slice(2)}${step.tokenIn.slice(2)}${step.amountIn.toString(16)}`;
-  }
-
-  /**
-   * Build multi-hop arbitrage transaction
-   */
-  buildArbitrageData(steps: SwapStep[]): string {
-    // Mock encoded data for multi-hop
-    return steps.map(s => this.buildSwapData(s)).join('');
-  }
-
-  /**
-   * Utility: delay for simulation
-   */
-  private delay(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
-  }
-
-  /**
    * Get executor status
    */
   getStatus(): {
     chainId: number;
     rpcUrl: string;
     maxGasPrice: string;
-    nonce: number;
+    walletAddress: string;
+    tradeCount: number;
   } {
     return {
       chainId: this.config.chainId,
       rpcUrl: this.config.rpcUrl,
       maxGasPrice: this.config.maxGasPrice.toString(),
-      nonce: this.nonce,
+      walletAddress: this.account.address,
+      tradeCount: tradeHistory.length,
     };
   }
 }
 
-// Placeholder for future viem integration
-export interface ViemIntegration {
-  walletClient: any;
-  publicClient: any;
-  executeWithViem(steps: SwapStep[]): Promise<TransactionResult>;
-}
+// Export trade history for external access
+export { tradeHistory };
